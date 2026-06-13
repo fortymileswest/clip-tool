@@ -58,7 +58,11 @@ playable.
 
 **Analysis**
 
-- Key and tempo detection in the header.
+- **Key and scale detection** in the header. A chromagram is built from FFT
+  frames and correlated against the Krumhansl-Schmuckler major and minor
+  profiles, so the clip is read as, say, `C major` or `A minor` — handy for
+  matching samples to a track or spotting what you're working with at a glance.
+- Tempo detection in the header.
 - A beat grid driven by the detected tempo, or by the Bars and Beats you set, so
   edits line up musically.
 
@@ -71,11 +75,31 @@ playable.
 
 ![Output and transport controls](docs/screenshots/output.png)
 
-**Transport**
+**Keyboard and mouse**
 
-- `Space` plays and stops the preview, `←` and `→` jump to the selection edges,
-  `Esc` closes. The preview plays exactly what you'll render, with a moving
-  playhead and live gain.
+The preview plays exactly what you'll render, with a moving playhead and live
+gain.
+
+Keyboard:
+
+| Key | Action |
+| --- | --- |
+| `Space` | Play / stop the preview |
+| `←` | Jump to the start of the selection |
+| `→` | Jump to the end of the selection |
+| `Esc` | Close the editor |
+| `Enter` | Commit an inline rename (while editing the filename) |
+
+Mouse:
+
+- **Right-click inside the selection** for the loop menu: **Loop selection** sets
+  the loop to your current selection (and turns it on), and **Clear selection**
+  resets the selection to the whole clip.
+- **Right-click an existing loop region** to also get **Clear loop**, which
+  removes the loop and switches it off.
+- **Right-click a fade region** to choose its curve shape (Linear, Exponential,
+  Logarithmic or S-curve) or clear the fade.
+- **Right-click the filename** to rename the rendered sample inline.
 
 ## Install (no dev tools needed)
 
