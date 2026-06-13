@@ -29,6 +29,8 @@ playable.
 
 ## Features
 
+![Zoomed in to the waveform](docs/screenshots/waveform-zoom.png)
+
 **Editing**
 
 - Waveform you can zoom from the whole clip down to individual samples (slider,
@@ -67,6 +69,8 @@ playable.
 - **→ Simpler** builds a new MIDI track with a Simpler loaded and ready to play.
 - **Rename** the rendered sample by right-clicking the filename.
 
+![Output and transport controls](docs/screenshots/output.png)
+
 **Transport**
 
 - `Space` plays and stops the preview, `←` and `→` jump to the selection edges,
@@ -102,6 +106,11 @@ Tempo, pitch and time-stretch controls sit along the top, with the detected
 tempo, Bars and Beats, pitch and grain settings, and the target BPM:
 
 ![Tempo, pitch and time-stretch controls](docs/screenshots/controls.png)
+
+Bars and Beats are app-styled dropdowns, and the number fields have their own up
+and down steppers:
+
+![Bars dropdown open](docs/screenshots/dropdown.png)
 
 ### Stereo to mono, the part Ableton is missing
 
