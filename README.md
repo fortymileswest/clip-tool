@@ -9,7 +9,7 @@ Made by [Danny Wincott](https://github.com/fortymileswest)
 ![Clip Tool](docs/screenshots/clip-tool.png)
 
 Clip Tool never touches your original sample. Every edit is written to a fresh
-file in your project's `Samples/Processed/` folder, so you can always get back
+file in your project's `Samples/Imported/` folder, so you can always get back
 to where you started.
 
 ## What it's for
@@ -89,7 +89,7 @@ off temporarily (the Live 12 beta can choke when loading many at once).
 4. Pick an output: **Process**, **Copy to Arrangement** or **→ Simpler**.
 
 The original sample is left alone. The result lands in
-`<your project>/Samples/Processed/`.
+`<your project>/Samples/Imported/`.
 
 Tempo, pitch and time-stretch controls sit along the top, with the detected
 tempo, Bars and Beats, pitch and grain settings, and the target BPM:
