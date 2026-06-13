@@ -33,8 +33,10 @@ playable.
 
 **Editing**
 
-- Waveform you can zoom from the whole clip down to individual samples (slider,
-  −/+, **Sel** to zoom to the selection, **Fit**).
+- **Sample-accurate zoom** — scale the waveform from the whole clip all the way
+  down to individual samples (slider, −/+, **Sel** to zoom to the selection,
+  **Fit**), so you can place trims, fades and the playhead on the exact sample
+  for detailed editing.
 - Click and drag to select, click to drop the playhead, drag the trim handles.
 - **Trim to Selection**, which is non-destructive and keeps your channel, fade,
   gain and stretch settings.
