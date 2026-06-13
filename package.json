@@ -1,0 +1,26 @@
+{
+  "name": "clip-tool",
+  "version": "1.0.0",
+  "description": "Free in-app audio clip editor for Ableton Live 12: stereo to mono, DC removal, trimming, fades, pitch and time-stretch, send to Simpler.",
+  "license": "MIT",
+  "author": "Danny Wincott",
+  "type": "module",
+  "main": "dist/extension.cjs",
+  "scripts": {
+    "build": "tsc --noEmit && tsx build.ts",
+    "package": "npm run build && extensions-cli package -o clip-tool.ablx -i dist/webview",
+    "start": "tsx build.ts && extensions-cli run",
+    "test": "node --import tsx/esm --test tests/**/*.test.ts"
+  },
+  "devDependencies": {
+    "@ableton-extensions/cli": "file:vendor/ableton-extensions-cli-1.0.0-beta.0.tgz",
+    "@types/node": "^25.2.3",
+    "esbuild": "0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@ableton-extensions/sdk": "file:vendor/ableton-extensions-sdk-1.0.0-beta.0.tgz",
+    "@fontsource/inter": "^5.2.8"
+  }
+}

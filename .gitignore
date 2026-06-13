@@ -1,0 +1,14 @@
+node_modules/
+node-compile-cache/
+tsx-501/
+*.map
+
+# Build output and packaged extension (shipped via GitHub Releases)
+dist/
+*.ablx
+
+# Ableton Extensions SDK (obtain from Ableton, place in vendor/)
+vendor/*.tgz
+
+# Local lockfile (the SDK is a local-file dependency, not registry-resolvable)
+package-lock.json

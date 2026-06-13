@@ -1,0 +1,7 @@
+{
+  "name": "Clip Tool",
+  "author": "Danny Wincott",
+  "entry": "dist/extension.cjs",
+  "version": "1.0.0",
+  "minimumApiVersion": "1.0.0"
+}

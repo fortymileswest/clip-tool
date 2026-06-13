@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Clip Tool</title>
+  <script>
+    /* WAVEFORM_DATA_PLACEHOLDER */
+  </script>
+  <style>
+    /* FONT_FACE_PLACEHOLDER */
+    :root {
+      --backdrop-1:#2d2e33; --backdrop-2:#141416;
+      --face-1:#dbd6c8; --face-2:#c9c4b6; --face-3:#aaa494;
+      --face-edge-hi:rgba(255,255,255,0.35); --face-edge-lo:rgba(0,0,0,0.18);
+      --engrave-dark:rgba(0,0,0,0.12); --engrave-hi:rgba(255,255,255,0.45);
+      --label:#2c2b26; --label-2:#4a473f;
+      --btn:#41413b; --btn-border:#2c2c27; --btn-text:#dcdacf; --btn-hover:#54534c;
+      --green:#3f9159; --green-border:#1d3f29; --green-text:#e6ffe9;
+      --lcd-1:#1a5230; --lcd-2:#0c3a20; --lcd-frame:#0c0c0b;
+      --phosphor:#90ffc0; --phosphor-hi:#c8ffe0;
+      --led:#c64a3a;
+      --akai-red:#d4302a;
+      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      /* Brushed-aluminium grain: long horizontal streaks (matches the mockup's
+         feTurbulence baseFrequency 0.004 x / 0.9 y), desaturated, soft-light. */
+      --brushed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.9' numOctaves='2' seed='9'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 12px;
+      background: radial-gradient(120% 100% at 50% 38%, var(--backdrop-1), var(--backdrop-2));
+      color: var(--label);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 6px;            /* thin dark backdrop frame around the unit */
+      overflow: hidden;
+      user-select: none;
+      position: relative;
+    }
+
+    /* Shared cream faceplate surface: brushed grain over a vertical gradient. */
+    #header, #zoom-bar, #controls, #actions, #time-bar {
+      background-image: var(--brushed),
+        linear-gradient(180deg, var(--face-1), var(--face-2) 48%, var(--face-3));
+      background-blend-mode: soft-light, normal;
+      background-size: 320px 160px, 100% 100%;
+    }
+
+    /* Title bar — macOS window-style: traffic light left, title centred. */
+    #header {
+      position: relative;
+      height: 32px;
+      padding: 0 30px;        /* clear the corner screws */
+      border-bottom: 1px solid var(--face-edge-lo);
+      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    #close-label { color: var(--label-2); cursor: pointer; }
+    #close-label:hover { color: var(--label); }
+    .zoom-label { color: var(--label-2); margin-left: auto; }
+    #file-name {
+      font-family: var(--mono);
+      font-weight: 600;
+      color: var(--label);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      min-width: 0;
+      cursor: default;
+    }
+    #file-name.editing {
+      overflow: visible;
+      min-width: 140px;
+      color: var(--phosphor-hi);
+      background: var(--lcd-2);
+      outline: 1px solid var(--green);
+      border-radius: 2px;
+      padding: 0 4px;
+      cursor: text;
+      text-shadow: none;
+    }
+    #header-meta { display: flex; align-items: center; gap: 12px; }
+    #key-label {
+      font-family: var(--mono);
+      color: var(--label);
+      font-weight: 600;
+      display: inline-block;
+      width: 130px;
+      text-align: right;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    #duration-label { font-family: var(--mono); color: var(--label); }
+
+    /* Red activity LED — repurposed floppy-drive light. Dim by default. */
+    #led {
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--led);
+      opacity: 0.3;
+      box-shadow: inset 0 0 2px rgba(0,0,0,0.5);
+      transition: opacity 0.08s ease;
+    }
+    #led.on {
+      opacity: 1;
+      box-shadow: 0 0 6px rgba(198,74,58,0.9), inset 0 0 2px rgba(0,0,0,0.4);
+    }
+
+    /* Clip Tool wordmark logo. */
+    #logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: 'Inter', system-ui, sans-serif;
+      font-weight: 700;
+      font-size: 19px;
+      letter-spacing: 0.4px;
+      flex-shrink: 0;
+    }
+    #logo .logo-arrow { display: block; }
+    #logo .logo-arrow path { stroke: var(--akai-red); }
+    .logo-clip { color: var(--akai-red); }
+    .logo-tool { color: var(--label); margin-left: 3px; }
+    #version {
+      font-family: var(--mono);
+      font-weight: 600;
+      font-size: 10px;
+      color: var(--label-2);
+      letter-spacing: 0.5px;
+      margin-left: 4px;
+      align-self: flex-end;
+      margin-bottom: 3px;
+    }
+
+    /* macOS-style red traffic light, as in Live's own windows */
+    #btn-close {
+      position: relative;
+      width: 13px; height: 13px;
+      border-radius: 50%;
+      background: #ff5f57;
+      border: 1px solid rgba(0,0,0,0.25);
+      cursor: pointer;
+      padding: 0;
+      flex-shrink: 0;
+      font-size: 0;
+    }
+    #btn-close::before, #btn-close::after {
+      content: "";
+      position: absolute;
+      top: 50%; left: 50%;
+      width: 7px; height: 1.4px;
+      background: rgba(70,0,0,0.8);
+      border-radius: 1px;
+    }
+    #btn-close::before { transform: translate(-50%, -50%) rotate(45deg); }
+    #btn-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
+    #btn-close:hover { background: #ff7b73; }
+
+    #zoom-bar {
+      padding: 6px 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--face-edge-lo);
+      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+    }
+    #zoom-bar label { color: var(--label-2); }
+    #zoom-slider { flex: 1; max-width: 50px; accent-color: var(--green); }
+
+    /* Recessed darker slider grooves with a green thumb (zoom + gain). */
+    #zoom-slider, #gain-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      height: 14px;
+      background: transparent;
+      cursor: pointer;
+    }
+    #zoom-slider::-webkit-slider-runnable-track,
+    #gain-slider::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--btn-border);
+      box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+    }
+    #zoom-slider::-moz-range-track,
+    #gain-slider::-moz-range-track {
+      height: 4px;
+      border-radius: 2px;
+      background: var(--btn-border);
+      box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+    }
+    #zoom-slider::-webkit-slider-thumb,
+    #gain-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px; height: 12px;
+      margin-top: -4px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 1px solid var(--green-border);
+    }
+    #zoom-slider::-moz-range-thumb,
+    #gain-slider::-moz-range-thumb {
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: var(--green);
+      border: 1px solid var(--green-border);
+    }
+
+    /* Flat hardware buttons + inputs — no gradient, no bevel. (Bars/Beats are
+       custom Alpine dropdowns; their native selects are .sr-only.) */
+    #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit,
+    #btn-stretch, .channel-btn, .btn,
+    .num-sm, #target-bpm {
+      background: var(--btn);
+      border: 1px solid var(--btn-border);
+      color: var(--btn-text);
+      border-radius: 3px;
+    }
+    #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit, #btn-stretch {
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    #zoom-btn-minus:hover, #zoom-btn-plus:hover, #zoom-btn-sel:hover,
+    #zoom-btn-fit:hover, #btn-stretch:hover, .channel-btn:hover, .btn:hover {
+      background: var(--btn-hover);
+    }
+
+    #bpm-group { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+    #stretch-group { display: flex; align-items: center; gap: 6px; }
+    .tempo-divider { width: 1px; height: 16px; background: var(--engrave-dark); flex-shrink: 0; }
+    #bpm-group label, #stretch-group label { color: var(--label-2); }
+    .num-sm, #target-bpm { padding: 2px 4px; }
+    .num-sm, #target-bpm { width: 42px; }
+    #target-bpm { width: 60px; }
+    #bpm-label {
+      font-family: var(--mono);
+      color: var(--label);
+      font-weight: 600;
+      min-width: 70px;
+      text-align: right;
+    }
+
+    /* App-style number fields: hide native spinners, add custom steppers. */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type=number] { -moz-appearance: textfield; appearance: textfield; }
+    .num { display: inline-flex; align-items: stretch; vertical-align: middle; }
+    .num .num-sm, .num #target-bpm { border-radius: 3px 0 0 3px; border-right: none; }
+    .num-steps { display: flex; flex-direction: column; width: 15px; }
+    .num-up, .num-down {
+      flex: 1;
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; font-size: 8px; line-height: 1;
+      background: var(--btn); color: var(--btn-text);
+      border: 1px solid var(--btn-border);
+      cursor: pointer; user-select: none;
+    }
+    .num-up { border-bottom: none; border-radius: 0 3px 0 0; }
+    .num-down { border-radius: 0 0 3px 0; }
+    .num-up:hover, .num-down:hover { background: var(--btn-hover); }
+
+    /* Waveform area — the green LCD: recessed frame, scanlines, soft glow. */
+    #waveform-container {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background:
+        repeating-linear-gradient(0deg, rgba(10,42,24,0.5) 0 1px, transparent 1px 12px),
+        linear-gradient(180deg, var(--lcd-1), var(--lcd-2));
+      border: 2px solid var(--lcd-frame);
+      box-shadow: inset 0 0 18px rgba(0,0,0,0.55), inset 0 0 30px rgba(20,90,55,0.25);
+    }
+    #waveform-canvas { display: block; cursor: crosshair; background: transparent; }
+
+    #time-bar {
+      padding: 4px 12px;
+      display: flex;
+      justify-content: space-between;
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--label);
+      border-top: 1px solid var(--face-edge-lo);
+      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+    }
+
+    #controls {
+      --field-w: 360px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
+      border-top: 1px solid var(--face-edge-lo);
+      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+    }
+    #control-fields { display: flex; flex-direction: column; gap: 8px; margin-left: auto; }
+    .control-row { display: flex; align-items: center; gap: 10px; }
+    .control-label { width: 54px; color: var(--label-2); flex-shrink: 0; margin-left: auto; }
+    #gain-slider { width: var(--field-w); flex: none; accent-color: var(--green); }
+    #gain-value {
+      width: 56px; text-align: right;
+      font-family: var(--mono);
+      color: var(--label);
+      font-weight: 600;
+    }
+    #channel-buttons { width: var(--field-w); display: flex; gap: 8px; }
+    #channel-buttons .channel-btn { flex: 1; }
+    .channel-trailing { width: 56px; flex: none; }
+    .channel-btn { padding: 3px 10px; cursor: pointer; }
+    .channel-btn.active {
+      background: var(--green);
+      color: var(--green-text);
+      border-color: var(--green-border);
+    }
+
+    #actions {
+      padding: 8px 30px;        /* clear the corner screws */
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      border-top: 1px solid var(--face-edge-lo);
+      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+    }
+    .btn { padding: 4px 16px; cursor: pointer; }
+    #btn-loop { margin-right: auto; }
+    #btn-process {
+      background: var(--green);
+      color: var(--green-text);
+      border-color: var(--green-border);
+      font-weight: 600;
+    }
+    #btn-process:hover { background: #4aa468; }
+
+    #warning {
+      display: none;
+      color: hsl(0,80%,45%);
+      font-size: 11px;
+      padding: 0 12px 6px;
+    }
+
+    #ctx-menu {
+      display: none;
+      position: fixed;
+      z-index: 10;
+      background: var(--btn);
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      padding: 4px 0;
+      min-width: 150px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      color: var(--btn-text);
+    }
+    .ctx-item { padding: 5px 12px; cursor: pointer; }
+    .ctx-item:hover { background: var(--green); color: var(--green-text); }
+
+    /* Decorative chrome overlay: corner screws + engraved divider lines.
+       Non-interactive; sits above the panels. */
+    #chrome { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
+    .screw {
+      position: absolute;
+      width: 12px; height: 12px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 34%, #d2cfc5, #6d6a60);
+      border: 1px solid #54514a;
+      box-shadow: 0 1px 1px rgba(0,0,0,0.4);
+    }
+    .screw::after {
+      content: "";
+      position: absolute;
+      top: 50%; left: 15%;
+      width: 70%; height: 1.5px;
+      background: #3d3b35;
+      transform: translateY(-50%);
+    }
+    .screw-tl { top: 9px; left: 9px; }
+    .screw-tr { top: 9px; right: 9px; }
+    .screw-bl { bottom: 9px; left: 9px; }
+    .screw-br { bottom: 9px; right: 9px; }
+
+    /* Visually-hidden native selects — kept as the state source for Alpine. */
+    .sr-only {
+      position: absolute !important;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0,0,0,0);
+      white-space: nowrap; border: 0;
+    }
+    /* App-styled dropdown (vanilla JS). Flat, themed to match the buttons. */
+    .sel { position: relative; display: inline-block; }
+    .sel-btn {
+      background: var(--btn);
+      border: 1px solid var(--btn-border);
+      color: var(--btn-text);
+      border-radius: 3px;
+      padding: 2px 8px;
+      min-width: 40px;
+      text-align: left;
+      cursor: pointer;
+    }
+    .sel-btn:hover { background: var(--btn-hover); }
+    .sel-menu {
+      display: none;
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 0;
+      z-index: 20;
+      margin: 0;
+      padding: 4px 0;
+      list-style: none;
+      min-width: 100%;
+      background: var(--btn);
+      border: 1px solid var(--btn-border);
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    .sel-opt { padding: 4px 12px; color: var(--btn-text); cursor: pointer; }
+    .sel-opt:hover { background: var(--btn-hover); }
+    .sel-opt.sel-active { background: var(--green); color: var(--green-text); }
+    .sel-menu.open { display: block; }
+  </style>
+</head>
+<body>
+  <div id="chrome" aria-hidden="true">
+    <span class="screw screw-tl"></span>
+    <span class="screw screw-tr"></span>
+    <span class="screw screw-bl"></span>
+    <span class="screw screw-br"></span>
+  </div>
+  <div id="header">
+    <span id="close-label">Close</span>
+    <button id="btn-close" title="Close (Esc)">×</button>
+    <span id="led" role="status" aria-label="Activity" title="Activity"></span>
+    <label class="zoom-label">Zoom</label>
+    <input id="zoom-slider" type="range" min="1" max="100" value="1" step="0.5">
+    <button id="zoom-btn-minus">−</button>
+    <button id="zoom-btn-plus">+</button>
+    <button id="zoom-btn-sel" title="Zoom to selection">Sel</button>
+    <button id="zoom-btn-fit">Fit</button>
+    <span id="file-name">Loading…</span>
+    <span id="header-meta">
+      <span id="key-label" title="Detected key (estimate)"></span>
+      <span id="duration-label"></span>
+    </span>
+  </div>
+
+  <div id="zoom-bar">
+    <span id="bpm-group">
+      <label>Bars</label>
+      <select id="bars-select" class="sr-only" tabindex="-1" aria-hidden="true">
+        <option>1</option>
+        <option>2</option>
+        <option>4</option>
+        <option>8</option>
+        <option>16</option>
+      </select>
+      <div class="sel" data-for="bars-select" data-label="Bars"></div>
+      <label>Beats</label>
+      <select id="beats-select" class="sr-only" tabindex="-1" aria-hidden="true" title="Beats per bar (time signature numerator)">
+        <option>2</option>
+        <option>3</option>
+        <option selected>4</option>
+        <option>5</option>
+        <option>6</option>
+        <option>7</option>
+        <option>8</option>
+        <option>9</option>
+        <option>10</option>
+        <option>11</option>
+        <option>12</option>
+        <option>13</option>
+        <option>14</option>
+        <option>15</option>
+        <option>16</option>
+      </select>
+      <div class="sel" data-for="beats-select" data-label="Beats" title="Beats per bar (time signature numerator)"></div>
+      <span id="bpm-label" title="Detected tempo (or bars × beats over the selection)"></span>
+    </span>
+    <span class="tempo-divider"></span>
+    <span id="stretch-group">
+      <label for="pitch-input">Pitch</label>
+      <div class="num" data-for="pitch-input">
+        <input id="pitch-input" class="num-sm" type="number" min="-24" max="24" step="1" value="0"
+          title="Pitch shift in semitones (-24..+24), cyclic / loop-safe">
+        <span class="num-steps">
+          <button type="button" class="num-up" tabindex="-1" aria-label="Increase">▴</button>
+          <button type="button" class="num-down" tabindex="-1" aria-label="Decrease">▾</button>
+        </span>
+      </div>
+      <label for="window-input" title="Grain window (ms) — larger = smoother/cleaner, smaller = grainier">Win</label>
+      <div class="num" data-for="window-input">
+        <input id="window-input" class="num-sm" type="number" min="2" max="120" step="10" value="48"
+          title="Grain window (ms) — larger = smoother/cleaner, smaller = grainier">
+        <span class="num-steps">
+          <button type="button" class="num-up" tabindex="-1" aria-label="Increase">▴</button>
+          <button type="button" class="num-down" tabindex="-1" aria-label="Decrease">▾</button>
+        </span>
+      </div>
+      <label for="transient-input" title="Transient preservation %">Trans</label>
+      <div class="num" data-for="transient-input">
+        <input id="transient-input" class="num-sm" type="number" min="0" max="100" step="10" value="0"
+          title="Transient preservation % (snaps grains to onsets)">
+        <span class="num-steps">
+          <button type="button" class="num-up" tabindex="-1" aria-label="Increase">▴</button>
+          <button type="button" class="num-down" tabindex="-1" aria-label="Decrease">▾</button>
+        </span>
+      </div>
+      <span class="tempo-divider"></span>
+      <label for="target-bpm">→</label>
+      <div class="num" data-for="target-bpm">
+        <input id="target-bpm" type="number" min="20" max="999" step="0.1" placeholder="BPM"
+          title="Target BPM for timestretch">
+        <span class="num-steps">
+          <button type="button" class="num-up" tabindex="-1" aria-label="Increase">▴</button>
+          <button type="button" class="num-down" tabindex="-1" aria-label="Decrease">▾</button>
+        </span>
+      </div>
+      <button id="btn-stretch" title="Timestretch the output to the target BPM (pitch preserved, loop-safe)">Stretch: OFF</button>
+    </span>
+  </div>
+
+  <div id="waveform-container">
+    <canvas id="waveform-canvas"></canvas>
+  </div>
+
+  <div id="time-bar">
+    <span id="time-start">0:00.000</span>
+    <span id="trim-info"></span>
+    <span id="time-end">0:00.000</span>
+  </div>
+
+  <div id="controls">
+    <span id="logo" aria-label="Clip Tool v1.0.0">
+      <svg class="logo-arrow" width="22" height="22" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 10.5 L10.5 3.5 M10.5 3.5 H6.2 M10.5 3.5 V7.8" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="logo-clip">CLIP</span><span class="logo-tool">TOOL</span>
+      <span id="version">v1.0.0</span>
+    </span>
+    <div id="control-fields">
+      <div class="control-row">
+        <span class="control-label">Gain</span>
+        <input id="gain-slider" type="range" min="-18" max="18" value="0" step="0.5">
+        <span id="gain-value">0.0 dB</span>
+      </div>
+      <div class="control-row" id="channel-row">
+        <span class="control-label">Channel</span>
+        <div id="channel-buttons">
+          <button class="channel-btn" data-ch="left">Left</button>
+          <button class="channel-btn" data-ch="right">Right</button>
+          <button class="channel-btn" data-ch="mixed">Mixed</button>
+          <button class="channel-btn active" data-ch="stereo">Stereo</button>
+          <button class="channel-btn" data-ch="side">Side</button>
+        </div>
+        <span class="channel-trailing"></span>
+      </div>
+    </div>
+  </div>
+
+  <div id="warning"></div>
+
+  <div id="ctx-menu">
+    <div class="ctx-item" id="ctx-loop-sel">Loop Selection</div>
+    <div class="ctx-item" id="ctx-clear-sel">Clear Selection</div>
+    <div class="ctx-item" id="ctx-clear-loop">Clear Loop</div>
+    <div class="ctx-item fade-item" data-curve="linear">Linear</div>
+    <div class="ctx-item fade-item" data-curve="exp">Exponential</div>
+    <div class="ctx-item fade-item" data-curve="log">Logarithmic</div>
+    <div class="ctx-item fade-item" data-curve="s">S-Curve</div>
+    <div class="ctx-item" id="ctx-clear-fade">Remove Fade</div>
+  </div>
+
+  <div id="actions">
+    <button class="btn" id="btn-preview">▶ Preview</button>
+    <button class="btn" id="btn-loop">Loop: OFF</button>
+    <button class="btn" id="btn-trim">Trim to Selection</button>
+    <button class="btn" id="btn-zc" title="Snap start/end points to zero crossings">ZC</button>
+    <button class="btn" id="btn-dc" title="Remove DC offset (applied on Process / Copy)">DC</button>
+    <button class="btn" id="btn-copy">Copy to Arrangement</button>
+    <button class="btn" id="btn-simpler">→ Simpler</button>
+    <button class="btn" id="btn-process">Process</button>
+  </div>
+
+  <script src="timestretch.js"></script>
+  <script src="fades.js"></script>
+  <script src="waveform.js"></script>
+  <script src="controls.js"></script>
+</body>
+</html>
