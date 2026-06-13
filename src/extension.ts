@@ -179,34 +179,10 @@ export async function activate(activation: ActivationContext) {
 
       await update('Importing into project…', 70);
 
-      const imported = await context.resources.importIntoProject(outputPath);
-
-      // Park processed renders in the project's Samples/Processed folder,
-      // clearly separated from raw imports. The path importIntoProject returns
-      // reveals the project location ({project}/Samples/Imported/...). The
-      // original sample is never written to — every edit is a new file.
-      let finalPath = imported;
-      try {
-        const importDir = path.dirname(imported);
-        const samplesRoot = path.basename(importDir).toLowerCase() === 'imported'
-          ? path.dirname(importDir)
-          : importDir;
-        const processedDir = path.join(samplesRoot, 'Processed');
-        await fs.mkdir(processedDir, { recursive: true });
-        // Reserve a unique name in the Processed dir itself — the temp-dir
-        // reservation does not protect against a same-named file left by an
-        // earlier session, which a plain rename would silently overwrite.
-        const target = await pickOutputPath(processedDir);
-        try {
-          await fs.rename(imported, target);
-          finalPath = target;
-        } catch (err) {
-          await fs.unlink(target).catch(() => {}); // drop the empty placeholder
-          throw err;
-        }
-      } catch {
-        // Sandbox may disallow writing there — keep Live's import location.
-      }
+      // Live's importIntoProject writes the file into the project's
+      // Samples/Imported/ folder and returns its final path. The original sample
+      // is never written to; every edit is a brand-new file.
+      const finalPath = await context.resources.importIntoProject(outputPath);
 
       // Simpler: drop the processed sample onto a Simpler on a new MIDI track.
       if (result.mode === 'simpler') {
