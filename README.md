@@ -91,7 +91,14 @@ off temporarily (the Live 12 beta can choke when loading many at once).
 The original sample is left alone. The result lands in
 `<your project>/Samples/Processed/`.
 
+Tempo, pitch and time-stretch controls sit along the top, with the detected
+tempo, Bars and Beats, pitch and grain settings, and the target BPM:
+
+![Tempo, pitch and time-stretch controls](docs/screenshots/controls.png)
+
 ### Stereo to mono, the part Ableton is missing
+
+![Channel modes: Stereo, Left, Right, Mixed and Side](docs/screenshots/channel-modes.png)
 
 With a stereo clip open, use the **Channel** row:
 
