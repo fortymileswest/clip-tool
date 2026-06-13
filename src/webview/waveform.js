@@ -23,6 +23,9 @@ class WaveformCanvas {
     this.fadeOut = { len: 0, type: 'linear', bend: 0 };
     this.detectedBpm = null; // set by controls.js tempo detection
     this.beatPhase = 0;      // time (s) of the first detected beat
+    // Once the user changes Bars/Beats, the detected tempo steps aside and the
+    // BPM/grid follow bars × beats instead. Reset whenever new audio loads.
+    this.manualTempo = false;
     this.dragging = null;
     this._setupResize();
     this._setupDrag();
@@ -39,6 +42,7 @@ class WaveformCanvas {
     // Stale tempo no longer applies to the new audio; re-detected after load.
     this.detectedBpm = null;
     this.beatPhase = 0;
+    this.manualTempo = false;
     this.displayPeaks = waveformData.peaks;
     this.trimStart = 0;
     this.trimEnd = waveformData.duration;
@@ -298,15 +302,24 @@ class WaveformCanvas {
     this._updateBpm();
   }
 
+  // The detected tempo, but only while it's sane and the user hasn't taken
+  // manual control via Bars/Beats. Returns null when bars × beats should drive
+  // the BPM and grid instead.
+  get autoBpm() {
+    if (this.manualTempo) return null;
+    return this.detectedBpm >= 20 && this.detectedBpm <= 999 ? this.detectedBpm : null;
+  }
+
   // BPM from the selection length, treating it as bars × beats. Exact for a
   // cleanly cut selection — no onset detection. draw() calls this every frame,
   // so the DOM refs are cached.
   _updateBpm() {
     const el = (this._bpmEl ??= document.getElementById('bpm-label'));
     if (!el || !this.data) return;
-    // Detected tempo first (no manual entry needed).
-    if (this.detectedBpm && this.detectedBpm >= 20 && this.detectedBpm <= 999) {
-      el.textContent = `${this.detectedBpm.toFixed(2)} BPM`;
+    // Detected tempo first, unless the user has overridden it with Bars/Beats.
+    const det = this.autoBpm;
+    if (det) {
+      el.textContent = `${det.toFixed(2)} BPM`;
       return;
     }
     const bars = this._bars();
@@ -341,8 +354,9 @@ class WaveformCanvas {
     // Detected tempo drives the grid across the whole view; otherwise fall back
     // to dividing the selection by bars × beats (manual mode).
     let phase, interval, fromT, toT;
-    if (this.detectedBpm && this.detectedBpm >= 20 && this.detectedBpm <= 999) {
-      interval = 60 / this.detectedBpm;
+    const det = this.autoBpm;
+    if (det) {
+      interval = 60 / det;
       phase = this.beatPhase || 0;
       fromT = Math.max(0, phase);
       toT = this.data.duration;

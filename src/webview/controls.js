@@ -354,6 +354,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const sel = document.getElementById(id);
     sel.addEventListener('change', () => {
       sel.blur(); // keep space/arrows on transport duty
+      // The user has asserted the bar/beat count: hand the BPM and grid back to
+      // bars × beats, stepping the detected tempo aside until the next load.
+      waveform.manualTempo = true;
       waveform.draw();
       updateStretchUi(); // bar/beat count changes the current BPM, so the ratio too
     });
@@ -367,9 +370,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function currentBpm() {
     // Prefer the detected tempo (no manual entry needed); fall back to the
-    // bars × beats over the selection length.
-    if (waveform.detectedBpm && waveform.detectedBpm >= 20 && waveform.detectedBpm <= 999) {
-      return waveform.detectedBpm;
+    // bars × beats over the selection length once the user takes manual control.
+    if (waveform.autoBpm) {
+      return waveform.autoBpm;
     }
     const bars = Number(document.getElementById('bars-select').value) || 1;
     const beats = Number(document.getElementById('beats-select').value) || 4;
