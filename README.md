@@ -47,6 +47,13 @@ playable.
 - **Pitch** shifting in semitones, with grain **Window** and **Transient**
   controls for tuning the character.
 
+> **A note on the stretch and pitch.** These run on my own bespoke algorithm,
+> and it's very much a work in progress. Right now it's a dirty, lo-fi stretch
+> rather than a clean, transparent one. That isn't always a downside: it's great
+> for grit, texture and happy accidents, and it can throw up some genuinely
+> interesting sounds. I'll keep working on it, so expect it to get cleaner over
+> time, and lean into the character in the meantime.
+
 **Analysis**
 
 - Key and tempo detection in the header.
@@ -130,6 +137,10 @@ that would otherwise fall apart in mono.
 - **Tuning a sample:** **Pitch** shifts in semitones without changing the length.
   Raise **Window** for a smoother, cleaner sound, drop it for more grain, and use
   **Transient** to keep the hits punchy.
+- **Lean into the lo-fi stretch:** the stretch and pitch are deliberately rough
+  for now (see the note above), so push them for character rather than for clean
+  results. Extreme ratios and small grain windows are a good way to stumble onto
+  unexpected textures.
 
 ## Build from source
 
