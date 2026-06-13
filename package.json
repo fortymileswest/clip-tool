@@ -1,6 +1,6 @@
 {
   "name": "clip-tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Free in-app audio clip editor for Ableton Live 12: stereo to mono, DC removal, trimming, fades, pitch and time-stretch, send to Simpler.",
   "license": "MIT",
   "author": "Danny Wincott",

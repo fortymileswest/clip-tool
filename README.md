@@ -101,7 +101,9 @@ Mouse:
   removes the loop and switches it off.
 - **Right-click a fade region** to choose its curve shape (Linear, Exponential,
   Logarithmic or S-curve) or clear the fade.
-- **Right-click the filename** to rename the rendered sample inline.
+- **Right-click the filename** to rename your new sample inline — the name you
+  type is used for the rendered file and the clip Live creates. Press `Enter` to
+  commit or `Esc` to cancel.
 
 ## Install (no dev tools needed)
 
