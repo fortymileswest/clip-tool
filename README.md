@@ -1,8 +1,9 @@
 # Clip Tool
 
 > A free audio clip editor that lives inside Ableton Live 12. Right-click a clip
-> and trim it, fold it to mono, clean it up, fade it, pitch or time-stretch it,
-> or fire it straight into a Simpler, without ever leaving Live.
+> to edit the actual audio — trim, clean up, fade, pitch, time-stretch, fold to
+> mono or fire it into a Simpler — and see and hear every change on the waveform
+> before you commit it, without ever leaving Live.
 
 Made by [Danny Wincott](https://github.com/fortymileswest)
 
@@ -14,18 +15,18 @@ to where you started.
 
 ## What it's for
 
-If you sample, you've probably hit the wall: **Ableton has no built-in way to
-turn a stereo sample into mono.** Most of the time that's a nuisance. When you're
-chopping breakbeats and old records it's a real problem, because the two channels
-often carry different phase, mic positions and bleed. Sum them naively and the
-snare goes thin, the low end drops out and the hats smear, all from phase
-cancellation you didn't ask for.
+Live's audio effects are *live*: they sit on the channel, you can't see them on
+the clip's waveform, and to make them permanent you have to bounce or render the
+track out. Clip Tool works the other way round. It edits the actual audio in your
+clip — trim, clean up, fade, fold to mono, pitch and time-stretch — and bakes the
+result into a new sample you can see and hear, so you're never guessing what a
+"live" effect will print.
 
-Clip Tool gives you proper control over that fold-down (sum, left, right or
-side), and rolls in the other sampler-prep jobs Live normally makes you bounce
-out for: removing DC offset, trimming on zero-crossings, fades, and a loop-safe
-time-stretch. It's the little tool that turns a rough chop into something
-playable.
+It also closes a real gap. Sampler prep — removing DC offset, trimming on
+zero-crossings, fades, a loop-safe time-stretch, and folding stereo down to mono
+(which Live still has no built-in way to do) — normally means bouncing the track
+out and hoping for the best. Clip Tool does all of it in place, on the clip,
+turning a rough chop into something playable without leaving Live.
 
 ## Features
 
@@ -140,7 +141,7 @@ and down steppers:
 
 ![Bars dropdown open](docs/screenshots/dropdown.png)
 
-### Stereo to mono, the part Ableton is missing
+### Folding stereo to mono
 
 ![Channel modes: Stereo, Left, Right, Mixed and Side](docs/screenshots/channel-modes.png)
 
