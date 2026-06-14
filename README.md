@@ -7,6 +7,10 @@
 
 Made by [Danny Wincott](https://github.com/fortymileswest)
 
+[![Downloads](https://img.shields.io/github/downloads/fortymileswest/clip-tool/total)](https://github.com/fortymileswest/clip-tool/releases)
+[![Latest release](https://img.shields.io/github/v/release/fortymileswest/clip-tool)](https://github.com/fortymileswest/clip-tool/releases/latest)
+[![Licence: MIT](https://img.shields.io/github/license/fortymileswest/clip-tool)](LICENSE)
+
 ![Clip Tool](docs/screenshots/clip-tool.png)
 
 Clip Tool never touches your original sample. Every edit is written to a fresh
