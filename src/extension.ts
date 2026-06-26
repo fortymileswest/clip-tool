@@ -28,6 +28,7 @@ interface ProcessResult {
   fadeIn?: { len: number; type: 'linear' | 'exp' | 'log' | 's'; bend: number } | null;
   fadeOut?: { len: number; type: 'linear' | 'exp' | 'log' | 's'; bend: number } | null;
   removeDc?: boolean;
+  preventClipping?: boolean;
   pitchSemitones?: number;
   stretchWindowMs?: number;
   stretchTransient?: number;
@@ -37,7 +38,7 @@ interface ProcessResult {
 
 function buildModalHtml(
   waveformData: object,
-  audioB64: string,
+  audioDataSrc: string,
   waveformJs: string,
   controlsJs: string,
   timestretchJs: string,
@@ -52,13 +53,22 @@ function buildModalHtml(
     .replace('/* FONT_FACE_PLACEHOLDER */', fontsCss)
     .replace(
       '/* WAVEFORM_DATA_PLACEHOLDER */',
-      // Must be window properties: top-level const in a classic script is not
-      // attached to window, and controls.js reads them from window.
-      // base64 is a safe charset (no quotes/backslashes), so it needs no escaping.
-      `window.WAVEFORM_DATA = ${waveformJson};\n`
-        + `window.AUDIO_WAV_B64 = "${audioB64}";`
+      // Must be a window property: a top-level const in a classic script is not
+      // attached to window, and controls.js reads it from window. The (large)
+      // audio bytes are delivered separately via audioDataSrc, loaded after the
+      // UI markup so the modal paints first.
+      `window.WAVEFORM_DATA = ${waveformJson};`,
     )
-    .replace('<script src="timestretch.js"></script>', `<script>\n${timestretchJs}\n</script>`)
+    // Load the audio bytes as an external subresource right before the UI
+    // scripts (i.e. after the body markup), so a long clip's megabytes no longer
+    // block the parser ahead of the UI.
+    .replace(
+      '<script src="timestretch.js"></script>',
+      // onerror flags a failed subresource load so getDecodedBuffer can report it
+      // instead of silently doing nothing (preview/deep-zoom would otherwise just
+      // not respond if the temp .js failed to load).
+      `<script src="${audioDataSrc}" onerror="window.AUDIO_WAV_LOAD_FAILED=true"></script>\n<script>\n${timestretchJs}\n</script>`,
+    )
     .replace('<script src="fades.js"></script>', `<script>\n${fadesJs}\n</script>`)
     .replace('<script src="waveform.js"></script>', `<script>\n${waveformJs}\n</script>`)
     .replace('<script src="controls.js"></script>', `<script>\n${controlsJs}\n</script>`);
@@ -84,7 +94,6 @@ export async function activate(activation: ActivationContext) {
 
     const startTime = clip.startTime;
     const endTime = clip.endTime;
-    const isWarped = clip.warping;
 
     // clip.parent is DataModelObject | null; the parent of an arrangement AudioClip is always
     // its AudioTrack. The SDK does not export AudioTrack as a newable class, so instanceof
@@ -115,14 +124,25 @@ export async function activate(activation: ActivationContext) {
     const displayPath = clip.filePath ?? renderedPath;
     waveformData.fileName = path.basename(displayPath);
 
-    // Embed the rendered audio so the dialog can preview edits via Web Audio.
-    const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
-    const html = buildModalHtml(waveformData, audioB64, waveformJs, controlsJs, timestretchJs, fadesJs, fontsCss);
-
-    // Serve from a file: URL — with audio embedded the page is megabytes,
-    // far beyond what is sane to push through a data: URL.
+    // Deliver the rendered audio for Web Audio preview as a SEPARATE script file
+    // beside the HTML, not inlined. A long clip is tens of MB of base64; inlined
+    // ahead of the UI markup it blocked the webview parser so the modal opened
+    // blank until a restart (issue #1). As an external subresource the UI paints
+    // first, then the audio loads.
     const tempDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
-    const htmlPath = path.join(tempDir, `audio-editor-ui-${Date.now()}.html`);
+    const stamp = Date.now();
+    const audioDataName = `audio-editor-data-${stamp}.js`;
+    const audioDataPath = path.join(tempDir, audioDataName);
+    const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
+    // base64's charset (A-Za-z0-9+/=) contains nothing that needs escaping in a
+    // double-quoted JS string, so concatenate directly rather than JSON.stringify
+    // the whole tens-of-MB payload (which would copy and scan it a second time).
+    await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
+
+    const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, fontsCss);
+
+    // Serve from a file: URL — the audio subresource sits in the same directory.
+    const htmlPath = path.join(tempDir, `audio-editor-ui-${stamp}.html`);
     await fs.writeFile(htmlPath, html, 'utf-8');
 
     let resultStr: string;
@@ -130,6 +150,7 @@ export async function activate(activation: ActivationContext) {
       resultStr = await context.ui.showModalDialog(pathToFileURL(htmlPath).href, 960, 620);
     } finally {
       fs.unlink(htmlPath).catch(() => {});
+      fs.unlink(audioDataPath).catch(() => {});
     }
 
     let result: ProcessResult;
@@ -170,12 +191,26 @@ export async function activate(activation: ActivationContext) {
         fadeIn: result.fadeIn,
         fadeOut: result.fadeOut,
         removeDc: result.removeDc,
+        // Default the guard on when the field is absent (older UI / safety).
+        preventClipping: result.preventClipping ?? true,
         pitchSemitones: result.pitchSemitones,
         stretchWindowMs: result.stretchWindowMs,
         stretchTransient: result.stretchTransient,
       };
 
-      await processAudio(opts);
+      let lastUpdateTime = Date.now();
+      let lastReportedProgress = 0;
+      await processAudio(opts, (progress) => {
+        const now = Date.now();
+        // Only update if progress jumped significantly or 100ms passed
+        if (progress - lastReportedProgress > 0.05 || now - lastUpdateTime >= 100) {
+          lastUpdateTime = now;
+          lastReportedProgress = progress;
+          const pct = Math.round(10 + progress * 60);
+          // Fire update without blocking — let Ableton queue it
+          void update(`Processing audio… ${pct}%`, pct);
+        }
+      });
 
       await update('Importing into project…', 70);
 
@@ -201,26 +236,23 @@ export async function activate(activation: ActivationContext) {
       const isCopy = result.mode === 'copy';
       await update(isCopy ? 'Adding copy to arrangement…' : 'Replacing clip…', 85);
 
-      // Cropping shortens the rendered audio; scale the new clip's arrangement
-      // length by the cropped fraction so it covers just the rendered material.
-      // (Assumes the original clip plays the whole file — Live adjusts if warped.)
-      const croppedFraction = result.crop && waveformData.duration > 0
-        ? (result.trimEnd - result.trimStart) / waveformData.duration
-        : 1;
-      // Stretching changes the audio length; scale arrangement time with it.
-      const stretchRatio = result.stretchRatio && result.stretchRatio > 0 ? result.stretchRatio : 1;
-      const newDuration = (endTime - startTime) * croppedFraction * stretchRatio;
-
-      // withinTransaction fn must return synchronously. clearClipsInRange and createAudioClip
-      // return Promises; collect them here and await outside the transaction boundary.
+      // renderPreFxAudio already printed the source clip's *warped playback* to a
+      // plain WAV at the project tempo — any warp is baked in and the audio is 1:1
+      // with arrangement time. So the replacement must be imported UNWARPED. Passing
+      // the source clip's `warping` here (true for a warped clip) makes Live Auto-Warp
+      // the already-printed file against a guessed tempo, double-warping it — the cause
+      // of the "tempo messed up" and stutter/jitter reports (issue #1).
+      //
+      // `duration` is omitted so Live uses the processed file's natural length at the
+      // current tempo. That exactly matches the rendered material — including any crop
+      // or stretch we applied — without assuming the original clip played the whole file.
       const promises = context.withinTransaction(() => {
         const clearP = isCopy ? null : track.clearClipsInRange(startTime, endTime);
         const createP = track.createAudioClip({
           filePath: finalPath,
           // Copy lands immediately after the original clip on the same track.
           startTime: isCopy ? endTime : startTime,
-          duration: isCopy ? newDuration : (endTime - startTime) * stretchRatio,
-          isWarped,
+          isWarped: false,
         });
         return [clearP, createP] as const;
       });

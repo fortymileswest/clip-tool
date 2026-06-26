@@ -19,78 +19,78 @@ function zeroCrossingsPerSecond(ch: Float32Array): number {
   return crossings / (ch.length / SR);
 }
 
-test('ratio 1 returns a copy of the input', () => {
+test('ratio 1 returns a copy of the input', async () => {
   const input = sine(440, 1);
-  const out = stretchCyclic([input], 1, SR, false);
+  const out = await stretchCyclic([input], 1, SR, false);
   assert.equal(out[0]!.length, input.length);
   assert.notEqual(out[0], input);
 });
 
-test('output length scales with the ratio', () => {
+test('output length scales with the ratio', async () => {
   const input = sine(440, 2);
   for (const ratio of [0.5, 1.5, 2]) {
-    const out = stretchCyclic([input], ratio, SR, true);
+    const out = await stretchCyclic([input], ratio, SR, true);
     assert.equal(out[0]!.length, Math.round(input.length * ratio));
   }
 });
 
-test('pitch is preserved when stretching', () => {
+test('pitch is preserved when stretching', async () => {
   const input = sine(440, 2);
   for (const ratio of [0.75, 1.5]) {
-    const out = stretchCyclic([input], ratio, SR, true);
+    const out = await stretchCyclic([input], ratio, SR, true);
     const zps = zeroCrossingsPerSecond(out[0]!);
     // 440Hz sine has ~880 crossings/sec; allow 5% for splice artifacts
     assert.ok(Math.abs(zps - 880) < 44, `ratio ${ratio}: ${zps} crossings/sec`);
   }
 });
 
-test('stereo channels stay aligned in length', () => {
+test('stereo channels stay aligned in length', async () => {
   const l = sine(220, 1);
   const r = sine(330, 1);
-  const out = stretchCyclic([l, r], 1.5, SR, true);
+  const out = await stretchCyclic([l, r], 1.5, SR, true);
   assert.equal(out.length, 2);
   assert.equal(out[0]!.length, out[1]!.length);
 });
 
-test('pitch +12 semitones doubles frequency, keeps length', () => {
+test('pitch +12 semitones doubles frequency, keeps length', async () => {
   const input = sine(440, 2);
-  const out = stretchCyclic([input], 1, SR, false, { pitch: 12 });
+  const out = await stretchCyclic([input], 1, SR, false, { pitch: 12 });
   assert.equal(out[0]!.length, input.length); // ratio 1 → length unchanged
   const zps = zeroCrossingsPerSecond(out[0]!);
   // 440Hz → 880Hz ≈ 1760 crossings/sec; allow margin for granular artifacts
   assert.ok(Math.abs(zps - 1760) < 160, `got ${zps}`);
 });
 
-test('pitch -12 semitones halves frequency', () => {
+test('pitch -12 semitones halves frequency', async () => {
   const input = sine(440, 2);
-  const out = stretchCyclic([input], 1, SR, false, { pitch: -12 });
+  const out = await stretchCyclic([input], 1, SR, false, { pitch: -12 });
   assert.equal(out[0]!.length, input.length);
   const zps = zeroCrossingsPerSecond(out[0]!);
   // 440Hz → 220Hz ≈ 440 crossings/sec
   assert.ok(Math.abs(zps - 440) < 80, `got ${zps}`);
 });
 
-test('pitch + tempo stretch compose: length follows ratio, pitch shifts', () => {
+test('pitch + tempo stretch compose: length follows ratio, pitch shifts', async () => {
   const input = sine(440, 2);
-  const out = stretchCyclic([input], 1.5, SR, true, { pitch: 7 });
+  const out = await stretchCyclic([input], 1.5, SR, true, { pitch: 7 });
   assert.equal(out[0]!.length, Math.round(input.length * 1.5));
   const zps = zeroCrossingsPerSecond(out[0]!);
   const expected = 2 * 440 * Math.pow(2, 7 / 12); // crossings/sec at +7 st
   assert.ok(Math.abs(zps - expected) / expected < 0.08, `got ${zps}, expected ~${expected}`);
 });
 
-test('small window and transient params do not change length or blow up', () => {
+test('small window and transient params do not change length or blow up', async () => {
   const input = sine(330, 2);
-  const out = stretchCyclic([input], 1, SR, false, { pitch: 5, windowMs: 12, transient: 0.5 });
+  const out = await stretchCyclic([input], 1, SR, false, { pitch: 5, windowMs: 12, transient: 0.5 });
   assert.equal(out[0]!.length, input.length);
   let peak = 0;
   for (const v of out[0]!) peak = Math.max(peak, Math.abs(v));
   assert.ok(peak <= 1.5, `peak ${peak}`);
 });
 
-test('cyclic stretch keeps levels sane at the loop seam', () => {
+test('cyclic stretch keeps levels sane at the loop seam', async () => {
   const input = sine(440, 1);
-  const out = stretchCyclic([input], 1.5, SR, true)[0]!;
+  const out = (await stretchCyclic([input], 1.5, SR, true))[0]!;
   // No silent gaps or blowups at either end of the cycle
   let maxAbs = 0;
   for (const v of out) maxAbs = Math.max(maxAbs, Math.abs(v));

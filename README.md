@@ -80,6 +80,17 @@ turning a rough chop into something playable without leaving Live.
 - **→ Simpler** builds a new MIDI track with a Simpler loaded and ready to play.
 - **Rename** the rendered sample by right-clicking the filename.
 
+> **Scope:** Clip Tool acts on the **one clip you right-clicked**, not on every clip
+> that shares the same audio file. If a sample is used by several clips (for example a
+> stereo bounce split across the arrangement), run the tool on each clip you want to
+> change. A batch "apply to all clips using this sample" mode is planned for a future
+> release.
+
+> **Clip Guard** (on by default) scales the result down if it would exceed 0&nbsp;dBFS.
+> Because Live renders the clip *pre-FX*, the printed audio can be hotter than the
+> post-FX sound you hear, so an otherwise clean source can clip once imported. Leave it
+> on unless you specifically want to keep levels above full scale for float headroom.
+
 ![Output and transport controls](docs/screenshots/output.png)
 
 **Keyboard and mouse**
@@ -134,6 +145,17 @@ off temporarily (the Live 12 beta can choke when loading many at once).
 
 The original sample is left alone. The result lands in
 `<your project>/Samples/Imported/`.
+
+### Working with long stems (what to expect)
+
+- **Opening the editor on a long stem takes a moment.** Live renders the clip's
+  audio before the editor can show the waveform, so on long files there's a short
+  pause between choosing **Clip Tool** and the editor appearing. This is normal —
+  it's preparing the waveform, not frozen.
+- **Pitch and time-stretch on long files take time to process.** These are the
+  heaviest operations, and the longer the clip the longer the render. The
+  progress bar climbs steadily through the render, so a moving bar (even a slow
+  one) means it's working, not stuck. Larger pitch shifts take the longest.
 
 Tempo, pitch and time-stretch controls sit along the top, with the detected
 tempo, Bars and Beats, pitch and grain settings, and the target BPM:

@@ -9,7 +9,7 @@ export interface DecodedAudio {
 
 // Minimal WAV decoder — handles PCM 8/16/24/32-bit int and 32/64-bit float.
 // Ableton exports WAV files in these formats. No external dependencies.
-export async function decodeWav(filePath: string): Promise<DecodedAudio> {
+export async function decodeWav(filePath: string, onProgress?: (progress: number) => void | Promise<void>): Promise<DecodedAudio> {
   const buf = await fs.readFile(filePath);
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
 
@@ -59,11 +59,13 @@ export async function decodeWav(filePath: string): Promise<DecodedAudio> {
   );
 
   for (let i = 0; i < frameCount; i++) {
+    if (onProgress && i % 100000 === 0) await onProgress(i / frameCount);
     for (let c = 0; c < channels; c++) {
       const pos = dataOffset + (i * channels + c) * bytesPerSample;
       channelBuffers[c]![i] = readSample(view, pos, bitsPerSample, isFloat);
     }
   }
+  if (onProgress) await onProgress(1);
 
   return {
     numberOfChannels: channels,

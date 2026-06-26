@@ -30,6 +30,35 @@ export interface ProcessOptions {
   stretchWindowMs?: number;
   /** Transient preservation 0..1 for the granular stretch/pitch. */
   stretchTransient?: number;
+  /**
+   * Guard the output against clipping. When the final peak exceeds ±1.0 (e.g. a
+   * pre-FX render captured hotter than the post-FX sound, or gain/stretch
+   * overshoot), scale all channels down so the peak sits at the ceiling. Only
+   * activates on overflow — sub-unity material is left bit-identical.
+   */
+  preventClipping?: boolean;
+}
+
+// Highest sample magnitude that survives the guard. Just below 1.0 so the
+// written float never rounds up to a clipping value on import.
+const PEAK_CEILING = 0.9999;
+
+// Scale all channels by one global factor if any sample exceeds the ceiling.
+// Global (not per-channel) so stereo/inter-channel balance is preserved.
+function preventClipping(channels: Float32Array[]): void {
+  let peak = 0;
+  for (const ch of channels) {
+    for (let i = 0; i < ch.length; i++) {
+      const a = Math.abs(ch[i]!);
+      if (a > peak) peak = a;
+    }
+  }
+  if (peak > PEAK_CEILING) {
+    const g = PEAK_CEILING / peak;
+    for (const ch of channels) {
+      for (let i = 0; i < ch.length; i++) ch[i]! *= g;
+    }
+  }
 }
 
 // Pure sample-domain processing: trim, channel mix, gain. Kept separate from
@@ -41,7 +70,7 @@ export function processSamples(
     ProcessOptions,
     | 'gain_dB' | 'channel' | 'crop' | 'trimStart' | 'trimEnd'
     | 'stretchRatio' | 'stretchCyclic' | 'fadeIn' | 'fadeOut' | 'removeDc'
-    | 'pitchSemitones' | 'stretchWindowMs' | 'stretchTransient'
+    | 'pitchSemitones' | 'stretchWindowMs' | 'stretchTransient' | 'preventClipping'
   >,
 ): Float32Array[] {
   if (channels.length === 0) throw new Error('processSamples: no channels');
@@ -117,23 +146,63 @@ export function processSamples(
 
   const hasStretch = !!opts.stretchRatio && Math.abs(opts.stretchRatio - 1) > 1e-3;
   const hasPitch = !!opts.pitchSemitones && Math.abs(opts.pitchSemitones) > 1e-6;
-  if (hasStretch || hasPitch) {
-    return stretchCyclic(out, opts.stretchRatio || 1, sampleRate, opts.stretchCyclic ?? false, {
-      pitch: opts.pitchSemitones || 0,
-      windowMs: opts.stretchWindowMs,
-      transient: opts.stretchTransient,
-    });
-  }
+
+  // The stretch/pitch pass is applied downstream by processAudio, so its long,
+  // CPU-heavy loop can report progress and yield to the event loop (otherwise the
+  // host progress bar freezes for the whole stretch). The clip guard must run
+  // after that overshoot, so when a stretch is pending we defer it too; with no
+  // stretch we apply it here, keeping the pure synchronous path (and its tests).
+  if (!hasStretch && !hasPitch && opts.preventClipping) preventClipping(out);
 
   return out;
 }
 
-export async function processAudio(opts: ProcessOptions): Promise<void> {
-  const decoded = await decodeWav(opts.inputPath);
+export async function processAudio(opts: ProcessOptions, onProgress?: (progress: number) => void): Promise<void> {
+  const hasStretch = !!opts.stretchRatio && Math.abs(opts.stretchRatio - 1) > 1e-3;
+  const hasPitch = !!opts.pitchSemitones && Math.abs(opts.pitchSemitones) > 1e-6;
+  const willStretch = hasStretch || hasPitch;
+
+  // Progress budget across the three CPU stages. Decode -> [0, decodeEnd],
+  // stretch -> [decodeEnd, stretchEnd], encode -> [stretchEnd, 1]. The stretch
+  // (when present) is the slowest, so it takes the wide middle band; otherwise
+  // decode/encode split the bar. Reporting also yields to the event loop on each
+  // tick (the host dialog can then repaint) — the pipeline is otherwise
+  // uninterrupted synchronous work that leaves the bar frozen until the end.
+  const decodeEnd = willStretch ? 0.15 : 0.5;
+  const stretchEnd = willStretch ? 0.85 : decodeEnd;
+  const stage = onProgress
+    ? (lo: number, hi: number) => async (frac: number): Promise<void> => {
+        const clamped = frac < 0 ? 0 : frac > 1 ? 1 : frac;
+        onProgress(lo + (hi - lo) * clamped);
+        await new Promise<void>((resolve) => setTimeout(resolve));
+      }
+    : () => undefined;
+
+  const decoded = await decodeWav(opts.inputPath, stage(0, decodeEnd));
   const channels: Float32Array[] = [];
   for (let c = 0; c < decoded.numberOfChannels; c++) {
     channels.push(decoded.getChannelData(c));
   }
-  const processed = processSamples(channels, decoded.sampleRate, opts);
-  await encodeWavFile(opts.outputPath, processed, decoded.sampleRate);
+
+  let processed = processSamples(channels, decoded.sampleRate, opts);
+
+  if (willStretch) {
+    processed = await stretchCyclic(
+      processed,
+      opts.stretchRatio || 1,
+      decoded.sampleRate,
+      opts.stretchCyclic ?? false,
+      {
+        pitch: opts.pitchSemitones || 0,
+        windowMs: opts.stretchWindowMs,
+        transient: opts.stretchTransient,
+        onProgress: stage(decodeEnd, stretchEnd),
+      },
+    );
+    // The clip guard runs here (processSamples deferred it) so it catches the
+    // stretch's overlap-add overshoot as well as any gain overshoot.
+    if (opts.preventClipping) preventClipping(processed);
+  }
+
+  await encodeWavFile(opts.outputPath, processed, decoded.sampleRate, stage(stretchEnd, 1));
 }

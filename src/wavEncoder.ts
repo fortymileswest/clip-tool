@@ -7,6 +7,7 @@ export async function encodeWavFile(
   filePath: string,
   channels: Float32Array[],
   sampleRate: number,
+  onProgress?: (progress: number) => void | Promise<void>,
 ): Promise<void> {
   const numChannels = channels.length;
   if (numChannels === 0) throw new Error('encodeWavFile: no channels');
@@ -51,11 +52,13 @@ export async function encodeWavFile(
   view.setUint32(o, dataSize, true); o += 4;
 
   for (let i = 0; i < frameCount; i++) {
+    if (onProgress && i % 100000 === 0) await onProgress(i / frameCount);
     for (let c = 0; c < numChannels; c++) {
       view.setFloat32(o, channels[c]![i]!, true);
       o += 4;
     }
   }
+  if (onProgress) await onProgress(1);
 
   await fs.writeFile(filePath, buf);
 }

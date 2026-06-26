@@ -143,6 +143,97 @@ test('trim bounds validation: no validation when crop=false', () => {
   );
 });
 
+test('preventClipping scales a peak above 1.0 down to the ceiling', () => {
+  // Gain pushes the 0.8 ramp peak above 1.0; the guard must pull it back.
+  const input = [Float32Array.from([0.8, -0.8, 0.4, -0.4])];
+  const out = processSamples(input, RATE, {
+    ...BASE, channel: 'left', gain_dB: 6, preventClipping: true,
+  });
+  let peak = 0;
+  for (const v of out[0]!) peak = Math.max(peak, Math.abs(v));
+  assert.ok(peak <= 1.0 + 1e-6, `peak should be <= 1.0, got ${peak}`);
+  assert.ok(peak > 0.99, `peak should sit at the ceiling, got ${peak}`);
+});
+
+test('preventClipping scales uniformly, preserving waveform shape', () => {
+  const input = [Float32Array.from([1.0, 0.5, -1.0, -0.25])];
+  const out = processSamples(input, RATE, {
+    ...BASE, channel: 'left', gain_dB: 6, preventClipping: true,
+  });
+  // Ratios between samples are unchanged after a single global scale.
+  assert.ok(Math.abs(out[0]![1]! / out[0]![0]! - 0.5) < 1e-6);
+  assert.ok(Math.abs(out[0]![3]! / out[0]![2]! - 0.25) < 1e-6);
+});
+
+test('preventClipping leaves sub-unity material untouched', () => {
+  const input = [Float32Array.from([0.5, -0.5, 0.25])];
+  const out = processSamples(input, RATE, {
+    ...BASE, channel: 'left', preventClipping: true,
+  });
+  assert.deepEqual(Array.from(out[0]!), [0.5, -0.5, 0.25]);
+});
+
+test('preventClipping is global across channels, preserving stereo balance', () => {
+  // Left peaks at 1.2 (clips), right at 0.6. One global factor 1/1.2 keeps the
+  // 2:1 inter-channel ratio intact.
+  const left = Float32Array.from([1.2, -0.6]);
+  const right = Float32Array.from([0.6, -0.3]);
+  const out = processSamples([left, right], RATE, {
+    ...BASE, channel: 'stereo', preventClipping: true,
+  });
+  assert.ok(Math.abs(out[0]![0]! - 0.9999) < 1e-3, 'left peak at ceiling');
+  assert.ok(Math.abs(out[0]![0]! / out[1]![0]! - 2) < 1e-6, '2:1 L/R ratio preserved');
+});
+
+test('preventClipping off (default) preserves overflow for float headroom', () => {
+  const input = [Float32Array.from([0.8])];
+  const out = processSamples(input, RATE, { ...BASE, channel: 'left', gain_dB: 6 });
+  assert.ok(out[0]![0]! > 1.0, 'no guard means float can exceed 1.0');
+});
+
+test('processAudio reports progress incrementally with no dead-zone, incl. the stretch stage', async () => {
+  const dir = os.tmpdir();
+  const inputPath = path.join(dir, `audio-editor-prog-in-${process.pid}.wav`);
+  const outputPath = path.join(dir, `audio-editor-prog-out-${process.pid}.wav`);
+
+  // 1 second at 48k — long enough that decode, the pitch stretch, and encode
+  // each emit several progress ticks.
+  const frames = 48000;
+  const ch = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) ch[i] = Math.sin((2 * Math.PI * 440 * i) / 48000);
+  await encodeWavFile(inputPath, [ch], 48000);
+
+  const seen: number[] = [];
+  await processAudio(
+    {
+      inputPath,
+      outputPath,
+      gain_dB: 0,
+      channel: 'left',
+      crop: false,
+      trimStart: 0,
+      trimEnd: 1,
+      pitchSemitones: 12, // forces the expensive WSOLA stretch stage
+    },
+    (p) => { seen.push(p); },
+  );
+
+  assert.ok(seen.length >= 6, `expected many progress ticks, got ${seen.length}`);
+  // Monotonic non-decreasing.
+  for (let i = 1; i < seen.length; i++) {
+    assert.ok(seen[i]! >= seen[i - 1]! - 1e-9, `progress went backwards: ${seen[i - 1]} -> ${seen[i]}`);
+  }
+  // Ends at the top of the range.
+  assert.ok(seen[seen.length - 1]! >= 0.99, `final progress ${seen[seen.length - 1]}`);
+  // No dead-zone: the stretch stage (previously silent) must fill the middle, so
+  // no gap between consecutive reported values exceeds a quarter of the bar.
+  const sorted = [...seen].sort((a, b) => a - b);
+  let maxGap = sorted[0]!;
+  for (let i = 1; i < sorted.length; i++) maxGap = Math.max(maxGap, sorted[i]! - sorted[i - 1]!);
+  maxGap = Math.max(maxGap, 1 - sorted[sorted.length - 1]!);
+  assert.ok(maxGap <= 0.25, `progress has a ${maxGap.toFixed(2)} dead-zone gap: ${sorted.map((v) => v.toFixed(2)).join(',')}`);
+});
+
 test('processAudio round-trips through WAV encode/decode', async () => {
   const dir = os.tmpdir();
   const inputPath = path.join(dir, `audio-editor-test-in-${process.pid}.wav`);

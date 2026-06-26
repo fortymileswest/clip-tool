@@ -485,9 +485,47 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnPreview = document.getElementById('btn-preview');
   let audioCtx = null;
   let decodedBuffer = null;
+  let decodePromise = null;
   let previewSrc = null;
   let previewGain = null;
   let playheadRaf = 0;
+
+  function ensureAudioCtx() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+  }
+
+  // Lazily decode the rendered audio, cached after the first call. The bytes
+  // arrive in a SEPARATE script file (window.AUDIO_WAV_B64) loaded after the UI
+  // markup, so the modal paints before this runs — a long clip is tens of MB and,
+  // when it was inlined ahead of the UI, left the webview blank until a restart
+  // (issue #1). file: URLs are fetched as a script subresource (allowed) rather
+  // than via fetch()/XHR (blocked cross-origin in the modal webview).
+  async function getDecodedBuffer() {
+    if (decodedBuffer) return decodedBuffer;
+    if (decodePromise) return decodePromise;
+    decodePromise = (async () => {
+      if (!window.AUDIO_WAV_B64) {
+        console.error(window.AUDIO_WAV_LOAD_FAILED
+          ? '[clip-tool] audio data subresource failed to load — preview unavailable'
+          : '[clip-tool] audio data not yet available');
+        return null;
+      }
+      const ctx = ensureAudioCtx();
+      const raw = atob(window.AUDIO_WAV_B64);
+      const bytes = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+      decodedBuffer = await ctx.decodeAudioData(bytes.buffer);
+      return decodedBuffer;
+    })().catch((err) => {
+      // Clear the cached promise so a transient decode failure can be retried
+      // on the next call instead of disabling preview for the whole session.
+      decodePromise = null;
+      console.error('[clip-tool] audio decode failed:', err);
+      return null;
+    });
+    return decodePromise;
+  }
 
   // Red activity LED — lit during preview playback and process/copy actions.
   const ledEl = document.getElementById('led');
@@ -561,17 +599,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function startPreview() {
-    if (!window.AUDIO_WAV_B64) return;
-    if (!audioCtx) {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
+    const buf = await getDecodedBuffer();
+    if (!buf) return;
     if (audioCtx.state === 'suspended') await audioCtx.resume();
-    if (!decodedBuffer) {
-      const raw = atob(window.AUDIO_WAV_B64);
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      decodedBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-    }
     previewGain = audioCtx.createGain();
     previewGain.gain.value = Math.pow(10, Number(gainSlider.value) / 20);
     previewSrc = audioCtx.createBufferSource();
@@ -610,7 +640,7 @@ document.addEventListener('DOMContentLoaded', () => {
         for (let c = 0; c < base.numberOfChannels; c++) {
           seg.push(base.getChannelData(c).slice(f0, f1));
         }
-        const stretched = window.TimeStretch.stretchCyclic(seg, ratio, sr, looped, {
+        const stretched = await window.TimeStretch.stretchCyclic(seg, ratio, sr, looped, {
           pitch, windowMs: win, transient: trans,
         });
         const buf = audioCtx.createBuffer(stretched.length, stretched[0].length, sr);
@@ -778,21 +808,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Decode the embedded audio up front: preview starts instantly and the
   // waveform can render true samples at deep zoom.
   (async () => {
-    if (!window.AUDIO_WAV_B64) return;
     try {
-      if (!audioCtx) {
-        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      const raw = atob(window.AUDIO_WAV_B64);
-      const bytes = new Uint8Array(raw.length);
-      for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-      decodedBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+      const buf = await getDecodedBuffer();
+      if (!buf) return;
       const chans = [];
-      for (let c = 0; c < decodedBuffer.numberOfChannels; c++) {
-        chans.push(decodedBuffer.getChannelData(c));
+      for (let c = 0; c < buf.numberOfChannels; c++) {
+        chans.push(buf.getChannelData(c));
       }
       waveform.setSampleData(chans);
-      updateKeyLabel(chans, decodedBuffer.sampleRate);
+      updateKeyLabel(chans, buf.sampleRate);
     } catch (e) {
       console.error('[Audio Editor] audio decode', e);
     }
@@ -910,6 +934,22 @@ document.addEventListener('DOMContentLoaded', () => {
     stopPreview();
   });
 
+  // Clip Guard — scale the processed output down if it would exceed 0 dBFS.
+  // On by default: a pre-FX render can be hotter than the post-FX sound, so the
+  // result can clip even when the source did not. Applied on Process / Copy / Simpler.
+  let clipGuardEnabled = true;
+  const btnClipGuard = document.getElementById('btn-clipguard');
+  const paintClipGuard = () => {
+    btnClipGuard.style.background = clipGuardEnabled ? 'hsl(200,80%,40%)' : '';
+    btnClipGuard.style.color = clipGuardEnabled ? '#fff' : '';
+  };
+  paintClipGuard();
+  btnClipGuard.addEventListener('click', () => {
+    clipGuardEnabled = !clipGuardEnabled;
+    paintClipGuard();
+    btnClipGuard.blur();
+  });
+
   // Trim to Selection — narrows the working audio to the current selection.
   // viewOffset maps editor-local time back to the original rendered file so
   // the process step crops the right region.
@@ -998,17 +1038,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // the selection, since they are anchored to its edges.
   document.getElementById('btn-process').addEventListener('click', () => {
     setLed(true);
-    const trimmedView = viewOffset > 0 || originalDuration - currentDuration > 1e-6;
     const hasFades = !!(fadeResult('in') || fadeResult('out'));
+    const hasExplicitSelection = waveform.hasLoop && loopEnabled;
     let crop, trimStart, trimEnd;
-    if (hasFades) {
+    if (hasFades || hasExplicitSelection) {
       crop = true;
       trimStart = viewOffset + waveform.trimStart;
       trimEnd = viewOffset + waveform.trimEnd;
-    } else if (trimmedView) {
-      crop = true;
-      trimStart = viewOffset;
-      trimEnd = viewOffset + currentDuration;
     } else {
       crop = false;
       trimStart = waveform.trimStart;
@@ -1027,6 +1063,7 @@ document.addEventListener('DOMContentLoaded', () => {
       fadeIn: fadeResult('in'),
       fadeOut: fadeResult('out'),
       removeDc: dcEnabled,
+      preventClipping: clipGuardEnabled,
       pitchSemitones: pitchSemitones(),
       stretchWindowMs: stretchWindowMs(),
       stretchTransient: stretchTransient(),
@@ -1035,10 +1072,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Copy to Arrangement — renders the trim selection as a new clip after the
-  // original, leaving the original in place. Always crops to the selection:
-  // this is the stand-in for dragging a selection out of the editor.
+  // original, leaving the original in place. Only crops if explicitly selected via loop.
   document.getElementById('btn-copy').addEventListener('click', () => {
     setLed(true);
+    const copyHasExplicitSelection = waveform.hasLoop && loopEnabled;
     closeWithResultOnce({
       cancelled: false,
       mode: 'copy',
@@ -1046,12 +1083,13 @@ document.addEventListener('DOMContentLoaded', () => {
       trimEnd: viewOffset + waveform.trimEnd,
       gain_dB: Number(gainSlider.value),
       channel: selectedChannel,
-      crop: true,
+      crop: copyHasExplicitSelection,
       stretchRatio: stretchRatio(),
       stretchCyclic: !!(waveform.hasLoop && loopEnabled),
       fadeIn: fadeResult('in'),
       fadeOut: fadeResult('out'),
       removeDc: dcEnabled,
+      preventClipping: clipGuardEnabled,
       pitchSemitones: pitchSemitones(),
       stretchWindowMs: stretchWindowMs(),
       stretchTransient: stretchTransient(),
@@ -1062,6 +1100,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Simpler — process the selection and drop it onto a Simpler on a new track.
   document.getElementById('btn-simpler').addEventListener('click', () => {
     setLed(true);
+    const simplerHasExplicitSelection = waveform.hasLoop && loopEnabled;
     closeWithResultOnce({
       cancelled: false,
       mode: 'simpler',
@@ -1069,12 +1108,13 @@ document.addEventListener('DOMContentLoaded', () => {
       trimEnd: viewOffset + waveform.trimEnd,
       gain_dB: Number(gainSlider.value),
       channel: selectedChannel,
-      crop: true,
+      crop: simplerHasExplicitSelection,
       stretchRatio: stretchRatio(),
       stretchCyclic: !!(waveform.hasLoop && loopEnabled),
       fadeIn: fadeResult('in'),
       fadeOut: fadeResult('out'),
       removeDc: dcEnabled,
+      preventClipping: clipGuardEnabled,
       pitchSemitones: pitchSemitones(),
       stretchWindowMs: stretchWindowMs(),
       stretchTransient: stretchTransient(),

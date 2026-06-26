@@ -15,15 +15,21 @@ export interface StretchOpts {
   transient?: number;
   /** Lo-fi / Akai grit 0..1 (default 0 = clean). Bit reduction + gentle aliasing tame. */
   lofi?: number;
+  /**
+   * Progress 0..1 over the (dominant) WSOLA pass, awaited periodically so a long
+   * stretch yields to the event loop and the host progress UI can repaint. The
+   * webview preview passes none, so it stays synchronous.
+   */
+  onProgress?: (frac: number) => void | Promise<void>;
 }
 
-export function stretchCyclic(
+export async function stretchCyclic(
   channels: Float32Array[],
   ratio: number,
   sampleRate: number,
   cyclic: boolean,
   opts: StretchOpts = {},
-): Float32Array[] {
+): Promise<Float32Array[]> {
   if (channels.length === 0) return channels;
   const pitch = opts.pitch ?? 0;
   const pitchFactor = Math.pow(2, pitch / 12);
@@ -36,7 +42,7 @@ export function stretchCyclic(
 
   // Stretch by ratio × pitchFactor, then (for pitch) resample down by
   // pitchFactor — net length = inLen × ratio, pitch × pitchFactor.
-  const stretched = wsola(channels, ratio * pitchFactor, sampleRate, cyclic, opts);
+  const stretched = await wsola(channels, ratio * pitchFactor, sampleRate, cyclic, opts);
   // Resample for pitch with anti-aliasing on the downsample (pitch up), which
   // is what removes the folded-back "noisy" high end.
   const out = noPitch ? stretched : resample(stretched, targetLen, cyclic, sampleRate);
@@ -130,13 +136,13 @@ function resample(
   });
 }
 
-function wsola(
+async function wsola(
   channels: Float32Array[],
   ratio: number,
   sampleRate: number,
   cyclic: boolean,
   opts: StretchOpts,
-): Float32Array[] {
+): Promise<Float32Array[]> {
   if (Math.abs(ratio - 1) < 1e-6) return channels.map((c) => Float32Array.from(c));
 
   const inLen = channels[0]!.length;
@@ -195,6 +201,10 @@ function wsola(
   let prevPos = 0;
   const frames = Math.ceil(outLen / hopOut);
   for (let k = 0; k < frames; k++) {
+    // Report progress and yield every 16 grains: this is the dominant cost of a
+    // render (and doubles for an octave pitch shift), so without yielding the
+    // host progress bar freezes here for the whole stretch.
+    if (opts.onProgress && (k & 15) === 0) await opts.onProgress(k / frames);
     const outPos = k * hopOut;
     const target = Math.round(k * hopIn);
 
