@@ -1032,6 +1032,15 @@ document.addEventListener('DOMContentLoaded', () => {
     updateKeyLabel(chans, sr);
   });
 
+  // True once the working view has been narrowed by Trim to Selection: either
+  // its origin moved along the original render (viewOffset) or its length shrank.
+  // The backend always renders from the original file, so Process/Copy/Simpler
+  // must crop it back to this view — even with no active loop — or the trim is
+  // silently discarded.
+  const TRIM_EPS = 1e-6;
+  const hasTrimmedView = () =>
+    viewOffset > TRIM_EPS || currentDuration < originalDuration - TRIM_EPS;
+
   // Process — replaces the original clip. Editor-local times map back through
   // viewOffset. To cut a sample down, use Trim to Selection (which narrows the
   // working view); Process then renders that view. Fades also force a crop to
@@ -1041,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasFades = !!(fadeResult('in') || fadeResult('out'));
     const hasExplicitSelection = waveform.hasLoop && loopEnabled;
     let crop, trimStart, trimEnd;
-    if (hasFades || hasExplicitSelection) {
+    if (hasFades || hasExplicitSelection || hasTrimmedView()) {
       crop = true;
       trimStart = viewOffset + waveform.trimStart;
       trimEnd = viewOffset + waveform.trimEnd;
@@ -1083,7 +1092,7 @@ document.addEventListener('DOMContentLoaded', () => {
       trimEnd: viewOffset + waveform.trimEnd,
       gain_dB: Number(gainSlider.value),
       channel: selectedChannel,
-      crop: copyHasExplicitSelection,
+      crop: copyHasExplicitSelection || hasTrimmedView(),
       stretchRatio: stretchRatio(),
       stretchCyclic: !!(waveform.hasLoop && loopEnabled),
       fadeIn: fadeResult('in'),
@@ -1108,7 +1117,7 @@ document.addEventListener('DOMContentLoaded', () => {
       trimEnd: viewOffset + waveform.trimEnd,
       gain_dB: Number(gainSlider.value),
       channel: selectedChannel,
-      crop: simplerHasExplicitSelection,
+      crop: simplerHasExplicitSelection || hasTrimmedView(),
       stretchRatio: stretchRatio(),
       stretchCyclic: !!(waveform.hasLoop && loopEnabled),
       fadeIn: fadeResult('in'),
