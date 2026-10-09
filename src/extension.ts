@@ -49,7 +49,7 @@ function buildModalHtml(
   // the inline <script> block early. The JS parser reads < back as '<'.
   const waveformJson = JSON.stringify(waveformData).replace(/</g, '\\u003c');
   return editorHtml
-    // Inlined Inter @font-face (base64 woff2) — keeps the modal self-contained.
+    // Inlined brand @font-faces (base64 woff2) — keeps the modal self-contained.
     .replace('/* FONT_FACE_PLACEHOLDER */', fontsCss)
     .replace(
       '/* WAVEFORM_DATA_PLACEHOLDER */',

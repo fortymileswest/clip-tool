@@ -8,145 +8,178 @@
   </script>
   <style>
     /* FONT_FACE_PLACEHOLDER */
+    /* Kerf Studio look: flat shell-grey chrome, dark recessed fields and
+       segmented tiles, a near-black glass screen for the waveform, and the
+       palette colours kept for what you can move. Values from Kerf Studio's
+       studio theme and the Kerf Audio brand. */
     :root {
-      --backdrop-1:#2d2e33; --backdrop-2:#141416;
-      --face-1:#dbd6c8; --face-2:#c9c4b6; --face-3:#aaa494;
-      --face-edge-hi:rgba(255,255,255,0.35); --face-edge-lo:rgba(0,0,0,0.18);
-      --engrave-dark:rgba(0,0,0,0.12); --engrave-hi:rgba(255,255,255,0.45);
-      --label:#2c2b26; --label-2:#4a473f;
-      --btn:#41413b; --btn-border:#2c2c27; --btn-text:#dcdacf; --btn-hover:#54534c;
-      --green:#3f9159; --green-border:#1d3f29; --green-text:#e6ffe9;
-      --lcd-1:#1a5230; --lcd-2:#0c3a20; --lcd-frame:#0c0c0b;
-      --phosphor:#90ffc0; --phosphor-hi:#c8ffe0;
-      --led:#c64a3a;
-      --akai-red:#d4302a;
-      --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-      /* Brushed-aluminium grain: long horizontal streaks (matches the mockup's
-         feTurbulence baseFrequency 0.004 x / 0.9 y), desaturated, soft-light. */
-      --brushed: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='320' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.004 0.9' numOctaves='2' seed='9'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+      --shell:#5c5c5c; --shell-hi:#646464; --shell-lo:#545454;
+      --shell-edge:#3a3a3a; --seam:#141414;
+      --field:#202020; --field-edge:#111111; --field-hover:#2a2a2a;
+      --tile-on:#151515; --row-sel:#262626;
+      --screen:#050506; --glass-top:#11151b; --glass-mid:#060708; --glass-bottom:#020203;
+      --ink:#f2f2f0; --ink-dim:#d0d0d3; --ink-faint:#9a9a9e;
+      --screen-ink:#ececea; --screen-dim:#8d8f95; --screen-faint:#5e6066;
+      --accent:#27d0a8; --accent-hi:#3ee0b9; --flag-ink:#121212;
+      --blue:#3aa0ff; --green:#1fb28a; --orange:#ff9d6a; --pink:#ff8fc9; --red:#ff4f6a;
+      --sans:'IBM Plex Sans', system-ui, sans-serif;
+      --mono:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+      --display:'Michroma', 'IBM Plex Sans', sans-serif;
+      --tile-h:24px;
+      --radius:3px;
     }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: var(--sans);
       font-size: 12px;
-      background: radial-gradient(120% 100% at 50% 38%, var(--backdrop-1), var(--backdrop-2));
-      color: var(--label);
+      background: var(--shell);
+      color: var(--ink);
       display: flex;
       flex-direction: column;
       height: 100vh;
-      padding: 6px;            /* thin dark backdrop frame around the unit */
       overflow: hidden;
       user-select: none;
       position: relative;
     }
+    button, input { font: inherit; color: inherit; }
 
-    /* Shared cream faceplate surface: brushed grain over a vertical gradient. */
-    #header, #zoom-bar, #controls, #actions, #time-bar {
-      background-image: var(--brushed),
-        linear-gradient(180deg, var(--face-1), var(--face-2) 48%, var(--face-3));
-      background-blend-mode: soft-light, normal;
-      background-size: 320px 160px, 100% 100%;
+    /* Micro-labels: uppercase mono, as Studio's section and field labels. */
+    .zoom-label, #zoom-bar label, .control-label {
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+      white-space: nowrap;
     }
 
-    /* Title bar — macOS window-style: traffic light left, title centred. */
+    /* Control bar. */
     #header {
       position: relative;
-      height: 32px;
-      padding: 0 30px;        /* clear the corner screws */
-      border-bottom: 1px solid var(--face-edge-lo);
-      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      height: 40px;
+      padding: 0 10px;
+      border-bottom: 1px solid var(--shell-edge);
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       flex-shrink: 0;
     }
-    #close-label { color: var(--label-2); cursor: pointer; }
-    #close-label:hover { color: var(--label); }
-    .zoom-label { color: var(--label-2); margin-left: auto; }
-    #file-name {
+    #close-label {
       font-family: var(--mono);
-      font-weight: 600;
-      color: var(--label);
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--ink-dim);
+      cursor: pointer;
+    }
+    #close-label:hover { color: var(--ink); }
+    .zoom-label { margin-left: auto; }
+
+    #file-name {
+      font-family: var(--sans);
+      font-weight: 500;
+      font-size: 13px;
+      color: var(--ink);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       min-width: 0;
+      margin-left: 8px;
       cursor: default;
     }
     #file-name.editing {
       overflow: visible;
       min-width: 140px;
-      color: var(--phosphor-hi);
-      background: var(--lcd-2);
-      outline: 1px solid var(--green);
-      border-radius: 2px;
-      padding: 0 4px;
+      color: var(--ink);
+      background: var(--field);
+      outline: 1px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 1px 6px;
       cursor: text;
       text-shadow: none;
     }
-    #header-meta { display: flex; align-items: center; gap: 12px; }
+    /* Clip facts on a black hardware readout, like Studio's counters. */
+    #header-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+      height: 28px;
+      padding: 0 10px;
+      background: linear-gradient(180deg, var(--glass-top), var(--glass-mid) 55%, var(--glass-bottom));
+      border: 1px solid #000;
+      border-radius: 4px;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 0 rgba(255,255,255,0.08);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+    }
     #key-label {
       font-family: var(--mono);
-      color: var(--label);
-      font-weight: 600;
+      color: var(--screen-ink);
+      font-weight: 500;
       display: inline-block;
-      width: 130px;
+      width: 112px;
       text-align: right;
       white-space: nowrap;
       overflow: hidden;
     }
-    #duration-label { font-family: var(--mono); color: var(--label); }
+    #key-label:empty { display: none; }
+    #duration-label { font-family: var(--mono); color: var(--screen-dim); white-space: nowrap; }
 
-    /* Red activity LED — repurposed floppy-drive light. Dim by default. */
+    /* Activity lamp: a small square in the accent, dim until work is running. */
     #led {
-      width: 9px; height: 9px;
-      border-radius: 50%;
+      width: 7px; height: 7px;
+      border-radius: 1px;
       flex-shrink: 0;
-      background: var(--led);
-      opacity: 0.3;
-      box-shadow: inset 0 0 2px rgba(0,0,0,0.5);
-      transition: opacity 0.08s ease;
+      background: var(--field);
+      border: 1px solid var(--field-edge);
+      margin-left: 4px;
+      transition: background 0.08s ease, box-shadow 0.08s ease;
     }
     #led.on {
-      opacity: 1;
-      box-shadow: 0 0 6px rgba(198,74,58,0.9), inset 0 0 2px rgba(0,0,0,0.4);
+      background: var(--accent);
+      border-color: var(--accent);
+      box-shadow: 0 0 6px rgba(39,208,168,0.8);
     }
 
-    /* Clip Tool wordmark logo. */
+    /* Product lockup: the Kerf mark, a Michroma wordmark, version in mono. */
     #logo {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      font-family: 'Inter', system-ui, sans-serif;
-      font-weight: 700;
-      font-size: 19px;
-      letter-spacing: 0.4px;
+      gap: 10px;
       flex-shrink: 0;
     }
-    #logo .logo-arrow { display: block; }
-    #logo .logo-arrow path { stroke: var(--akai-red); }
-    .logo-clip { color: var(--akai-red); }
-    .logo-tool { color: var(--label); margin-left: 3px; }
+    #logo .logo-mark { display: block; height: 30px; width: auto; }
+    #logo .logo-text { display: flex; flex-direction: column; gap: 5px; }
+    .logo-word {
+      font-family: var(--display);
+      font-size: 14px;
+      line-height: 1;
+      letter-spacing: 0.22em;
+      color: var(--ink);
+      white-space: nowrap;
+    }
     #version {
       font-family: var(--mono);
-      font-weight: 600;
+      font-weight: 500;
       font-size: 10px;
-      color: var(--label-2);
-      letter-spacing: 0.5px;
-      margin-left: 4px;
-      align-self: flex-end;
-      margin-bottom: 3px;
+      line-height: 1;
+      color: var(--ink-dim);
+      letter-spacing: 0.1em;
     }
 
-    /* macOS-style red traffic light, as in Live's own windows */
+    /* Close: a small dark tile with a drawn cross. */
     #btn-close {
       position: relative;
-      width: 13px; height: 13px;
-      border-radius: 50%;
-      background: #ff5f57;
-      border: 1px solid rgba(0,0,0,0.25);
+      width: 22px; height: 22px;
+      border-radius: var(--radius);
+      background: var(--field);
+      border: 1px solid var(--field-edge);
       cursor: pointer;
       padding: 0;
       flex-shrink: 0;
@@ -156,237 +189,288 @@
       content: "";
       position: absolute;
       top: 50%; left: 50%;
-      width: 7px; height: 1.4px;
-      background: rgba(70,0,0,0.8);
+      width: 10px; height: 1.5px;
+      background: var(--ink-dim);
       border-radius: 1px;
     }
     #btn-close::before { transform: translate(-50%, -50%) rotate(45deg); }
     #btn-close::after { transform: translate(-50%, -50%) rotate(-45deg); }
-    #btn-close:hover { background: #ff7b73; }
+    #btn-close:hover { background: var(--field-hover); }
+    #btn-close:hover::before, #btn-close:hover::after { background: var(--red); }
 
+    /* Tempo and stretch row. */
     #zoom-bar {
-      padding: 6px 12px;
+      padding: 6px 10px;
       display: flex;
       align-items: center;
-      gap: 8px;
-      border-bottom: 1px solid var(--face-edge-lo);
-      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      gap: 6px;
+      border-bottom: 1px solid var(--shell-edge);
+      flex-shrink: 0;
     }
-    #zoom-bar label { color: var(--label-2); }
-    #zoom-slider { flex: 1; max-width: 50px; accent-color: var(--green); }
 
-    /* Recessed darker slider grooves with a green thumb (zoom + gain). */
+    /* Sliders: a recessed well with a lit fill and a light bar thumb. The
+       fill position comes from --fill (0..100), set from script. */
+    #zoom-slider { flex: none; width: 64px; }
     #zoom-slider, #gain-slider {
+      --fill: 0;
       -webkit-appearance: none;
       appearance: none;
-      height: 14px;
+      height: 18px;
       background: transparent;
       cursor: pointer;
     }
-    #zoom-slider::-webkit-slider-runnable-track,
+    #zoom-slider::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 1px;
+      background: linear-gradient(90deg, var(--ink-dim) 0 calc(var(--fill) * 1%), var(--seam) 0);
+      box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
+    }
+    #zoom-slider::-moz-range-track { height: 6px; border-radius: 1px; background: var(--seam); }
+    /* Gain is bipolar: the fill grows from 0 dB at the centre. */
     #gain-slider::-webkit-slider-runnable-track {
-      height: 4px;
-      border-radius: 2px;
-      background: var(--btn-border);
-      box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
+      height: 8px;
+      border-radius: 1px;
+      background: linear-gradient(90deg,
+        var(--seam) 0 min(50%, calc(var(--fill) * 1%)),
+        var(--accent) 0 max(50%, calc(var(--fill) * 1%)),
+        var(--seam) 0);
+      box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
     }
-    #zoom-slider::-moz-range-track,
-    #gain-slider::-moz-range-track {
-      height: 4px;
-      border-radius: 2px;
-      background: var(--btn-border);
-      box-shadow: inset 0 1px 1px rgba(0,0,0,0.5);
-    }
+    #gain-slider::-moz-range-track { height: 8px; border-radius: 1px; background: var(--seam); }
     #zoom-slider::-webkit-slider-thumb,
     #gain-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 12px; height: 12px;
-      margin-top: -4px;
-      border-radius: 50%;
-      background: var(--green);
-      border: 1px solid var(--green-border);
+      width: 5px; height: 16px;
+      margin-top: -5px;
+      border-radius: 1px;
+      background: var(--ink);
+      border: 1px solid var(--field-edge);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.5);
     }
+    #zoom-slider::-webkit-slider-thumb { margin-top: -6px; }
+    #gain-slider::-webkit-slider-thumb { width: 6px; height: 18px; }
     #zoom-slider::-moz-range-thumb,
     #gain-slider::-moz-range-thumb {
-      width: 12px; height: 12px;
-      border-radius: 50%;
-      background: var(--green);
-      border: 1px solid var(--green-border);
+      width: 5px; height: 16px;
+      border-radius: 1px;
+      background: var(--ink);
+      border: 1px solid var(--field-edge);
     }
 
-    /* Flat hardware buttons + inputs — no gradient, no bevel. (Bars/Beats are
-       custom Alpine dropdowns; their native selects are .sr-only.) */
+    /* Tiles: dark recessed buttons and fields, uppercase mono labels. */
     #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit,
-    #btn-stretch, .channel-btn, .btn,
+    #btn-stretch, .channel-btn, .btn, .sel-btn,
     .num-sm, #target-bpm {
-      background: var(--btn);
-      border: 1px solid var(--btn-border);
-      color: var(--btn-text);
-      border-radius: 3px;
+      height: var(--tile-h);
+      background: var(--field);
+      border: 1px solid var(--field-edge);
+      color: var(--ink-dim);
+      border-radius: var(--radius);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 500;
+      white-space: nowrap;
     }
-    #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit, #btn-stretch {
-      padding: 2px 8px;
+    #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit, #btn-stretch, .channel-btn, .btn {
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
       cursor: pointer;
     }
+    #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit, #btn-stretch { padding: 0 9px; }
+    #zoom-btn-minus, #zoom-btn-plus { padding: 0; width: var(--tile-h); font-size: 13px; }
     #zoom-btn-minus:hover, #zoom-btn-plus:hover, #zoom-btn-sel:hover,
-    #zoom-btn-fit:hover, #btn-stretch:hover, .channel-btn:hover, .btn:hover {
-      background: var(--btn-hover);
+    #zoom-btn-fit:hover, #btn-stretch:hover, .channel-btn:hover, .btn:hover, .sel-btn:hover {
+      background: var(--field-hover);
+      color: var(--ink);
     }
+    button:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+
+    /* Latching toggles (Loop, ZC, DC, Clip Guard, Stretch): lit in blue on a
+       darker tile, as Studio's latched buttons. */
+    .is-on, .is-on:hover {
+      background: var(--tile-on) !important;
+      color: var(--blue) !important;
+      border-color: var(--blue) !important;
+      box-shadow: 0 0 6px rgba(58,160,255,0.25);
+    }
+    .is-error { border-color: var(--red) !important; }
 
     #bpm-group { margin-left: auto; display: flex; align-items: center; gap: 6px; }
     #stretch-group { display: flex; align-items: center; gap: 6px; }
-    .tempo-divider { width: 1px; height: 16px; background: var(--engrave-dark); flex-shrink: 0; }
-    #bpm-group label, #stretch-group label { color: var(--label-2); }
-    .num-sm, #target-bpm { padding: 2px 4px; }
-    .num-sm, #target-bpm { width: 42px; }
-    #target-bpm { width: 60px; }
+    .tempo-divider { width: 1px; height: 18px; background: var(--shell-edge); margin: 0 4px; flex-shrink: 0; }
+    .num-sm, #target-bpm {
+      padding: 0 6px;
+      color: var(--ink);
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      outline: none;
+    }
+    .num-sm { width: 40px; }
+    #target-bpm { width: 58px; }
+    #target-bpm::placeholder { color: var(--ink-faint); opacity: 1; }
+    .num-sm:focus, #target-bpm:focus { border-color: var(--accent); }
     #bpm-label {
       font-family: var(--mono);
-      color: var(--label);
-      font-weight: 600;
-      min-width: 70px;
+      font-size: 11px;
+      color: var(--ink);
+      font-weight: 500;
+      font-variant-numeric: tabular-nums;
+      min-width: 84px;
       text-align: right;
+      white-space: nowrap;
     }
 
-    /* App-style number fields: hide native spinners, add custom steppers. */
+    /* Number fields: native spinners hidden, a slim stepper column beside. */
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     input[type=number] { -moz-appearance: textfield; appearance: textfield; }
-    .num { display: inline-flex; align-items: stretch; vertical-align: middle; }
-    .num .num-sm, .num #target-bpm { border-radius: 3px 0 0 3px; border-right: none; }
-    .num-steps { display: flex; flex-direction: column; width: 15px; }
+    .num { display: inline-flex; align-items: stretch; vertical-align: middle; height: var(--tile-h); }
+    .num .num-sm, .num #target-bpm { border-radius: var(--radius) 0 0 var(--radius); border-right: none; }
+    .num-steps { display: flex; flex-direction: column; width: 14px; }
     .num-up, .num-down {
       flex: 1;
       display: flex; align-items: center; justify-content: center;
-      padding: 0; font-size: 8px; line-height: 1;
-      background: var(--btn); color: var(--btn-text);
-      border: 1px solid var(--btn-border);
+      padding: 0; font-size: 7px; line-height: 1;
+      background: var(--field); color: var(--ink-faint);
+      border: 1px solid var(--field-edge);
       cursor: pointer; user-select: none;
     }
-    .num-up { border-bottom: none; border-radius: 0 3px 0 0; }
-    .num-down { border-radius: 0 0 3px 0; }
-    .num-up:hover, .num-down:hover { background: var(--btn-hover); }
+    .num-up { border-bottom: none; border-radius: 0 var(--radius) 0 0; }
+    .num-down { border-radius: 0 0 var(--radius) 0; border-top: 1px solid var(--seam); }
+    .num-up:hover, .num-down:hover { background: var(--field-hover); color: var(--ink); }
 
-    /* Waveform area — the green LCD: recessed frame, scanlines, soft glow. */
+    /* The screen: black glass, recessed into the shell. */
     #waveform-container {
       flex: 1;
       position: relative;
       overflow: hidden;
-      background:
-        repeating-linear-gradient(0deg, rgba(10,42,24,0.5) 0 1px, transparent 1px 12px),
-        linear-gradient(180deg, var(--lcd-1), var(--lcd-2));
-      border: 2px solid var(--lcd-frame);
-      box-shadow: inset 0 0 18px rgba(0,0,0,0.55), inset 0 0 30px rgba(20,90,55,0.25);
+      margin: 8px 10px 0;
+      border-radius: 4px;
+      background: linear-gradient(180deg, var(--glass-top), var(--glass-mid) 40%, var(--glass-bottom));
+      border: 1px solid #000;
+      box-shadow: 0 1px 0 rgba(255,255,255,0.12), inset 0 0 40px rgba(0,0,0,0.55);
+    }
+    /* Top highlight and a faint diagonal reflection, drawn over the canvas. */
+    #waveform-container::before, #waveform-container::after {
+      content: "";
+      position: absolute;
+      pointer-events: none;
+    }
+    #waveform-container::before {
+      left: 8%; right: 8%; top: 0; height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.28), transparent);
+    }
+    #waveform-container::after {
+      inset: 0;
+      background: linear-gradient(112deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.025) 27%, transparent 27.2%);
+      opacity: 0.55;
     }
     #waveform-canvas { display: block; cursor: crosshair; background: transparent; }
 
     #time-bar {
-      padding: 4px 12px;
+      padding: 4px 12px 0;
+      height: 20px;
       display: flex;
       justify-content: space-between;
       font-size: 10px;
       font-family: var(--mono);
-      color: var(--label);
-      border-top: 1px solid var(--face-edge-lo);
-      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      font-variant-numeric: tabular-nums;
+      color: var(--ink-dim);
+      flex-shrink: 0;
     }
+    #trim-info { color: var(--ink); }
 
     #controls {
       --field-w: 360px;
-      padding: 10px 12px;
+      padding: 10px 12px 10px 14px;
       display: flex;
       flex-direction: row;
       align-items: center;
       gap: 16px;
-      border-top: 1px solid var(--face-edge-lo);
-      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      border-top: 1px solid var(--shell-edge);
+      margin-top: 6px;
+      flex-shrink: 0;
     }
-    #control-fields { display: flex; flex-direction: column; gap: 8px; margin-left: auto; }
+    #control-fields { display: flex; flex-direction: column; gap: 8px; margin-left: auto; min-width: 0; }
     .control-row { display: flex; align-items: center; gap: 10px; }
-    .control-label { width: 54px; color: var(--label-2); flex-shrink: 0; margin-left: auto; }
-    #gain-slider { width: var(--field-w); flex: none; accent-color: var(--green); }
+    .control-label { width: 62px; flex-shrink: 0; margin-left: auto; text-align: right; }
+    #gain-slider { width: var(--field-w); flex: 0 1 auto; min-width: 120px; }
     #gain-value {
-      width: 56px; text-align: right;
+      width: 64px; text-align: right;
       font-family: var(--mono);
-      color: var(--label);
-      font-weight: 600;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--ink);
+      font-weight: 500;
+      white-space: nowrap;
     }
-    #channel-buttons { width: var(--field-w); display: flex; gap: 8px; }
-    #channel-buttons .channel-btn { flex: 1; }
-    .channel-trailing { width: 56px; flex: none; }
-    .channel-btn { padding: 3px 10px; cursor: pointer; }
-    .channel-btn.active {
-      background: var(--green);
-      color: var(--green-text);
-      border-color: var(--green-border);
+    /* Channel: one segmented control, joined tiles, the active one inked. */
+    #channel-buttons { width: var(--field-w); flex: 0 1 auto; min-width: 0; display: flex; gap: 0; }
+    #channel-buttons .channel-btn { flex: 1; min-width: 0; border-radius: 0; margin-left: -1px; }
+    #channel-buttons .channel-btn:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+    #channel-buttons .channel-btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+    .channel-trailing { width: 64px; flex: none; }
+    .channel-btn { padding: 0 8px; }
+    .channel-btn.active, .channel-btn.active:hover {
+      background: var(--tile-on);
+      color: var(--ink);
+      position: relative;
+      box-shadow: inset 0 -2px 0 var(--accent);
     }
 
     #actions {
-      padding: 8px 30px;        /* clear the corner screws */
+      padding: 8px 10px 10px;
       display: flex;
       justify-content: flex-end;
-      gap: 8px;
-      border-top: 1px solid var(--face-edge-lo);
-      box-shadow: inset 0 1px 0 var(--face-edge-hi);
+      gap: 6px;
+      border-top: 1px solid var(--shell-edge);
+      flex-shrink: 0;
     }
-    .btn { padding: 4px 16px; cursor: pointer; }
+    .btn { --tile-h: 28px; padding: 0 12px; }
     #btn-loop { margin-right: auto; }
+    /* Process: the one lit action. */
     #btn-process {
-      background: var(--green);
-      color: var(--green-text);
-      border-color: var(--green-border);
+      background: var(--accent);
+      color: var(--flag-ink);
+      border-color: #0f7a61;
       font-weight: 600;
+      padding: 0 18px;
     }
-    #btn-process:hover { background: #4aa468; }
+    #btn-process:hover { background: var(--accent-hi); color: var(--flag-ink); }
 
     #warning {
       display: none;
-      color: hsl(0,80%,45%);
+      color: var(--ink);
+      font-family: var(--mono);
       font-size: 11px;
-      padding: 0 12px 6px;
+      padding: 6px 12px;
+      background: var(--seam);
+      border-top: 1px solid var(--red);
     }
 
+    /* Menus: dark lists, inked on hover, accent tick-bar on the selection. */
+    #ctx-menu, .sel-menu {
+      background: var(--field);
+      border: 1px solid var(--field-edge);
+      border-radius: 4px;
+      padding: 4px 0;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.55);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 12px;
+    }
     #ctx-menu {
       display: none;
       position: fixed;
       z-index: 10;
-      background: var(--btn);
-      border: 1px solid var(--btn-border);
-      border-radius: 4px;
-      padding: 4px 0;
-      min-width: 150px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-      color: var(--btn-text);
+      min-width: 160px;
     }
     .ctx-item { padding: 5px 12px; cursor: pointer; }
-    .ctx-item:hover { background: var(--green); color: var(--green-text); }
+    .ctx-item:hover { background: var(--row-sel); }
 
-    /* Decorative chrome overlay: corner screws + engraved divider lines.
-       Non-interactive; sits above the panels. */
-    #chrome { position: absolute; inset: 0; pointer-events: none; z-index: 5; }
-    .screw {
-      position: absolute;
-      width: 12px; height: 12px;
-      border-radius: 50%;
-      background: radial-gradient(circle at 38% 34%, #d2cfc5, #6d6a60);
-      border: 1px solid #54514a;
-      box-shadow: 0 1px 1px rgba(0,0,0,0.4);
-    }
-    .screw::after {
-      content: "";
-      position: absolute;
-      top: 50%; left: 15%;
-      width: 70%; height: 1.5px;
-      background: #3d3b35;
-      transform: translateY(-50%);
-    }
-    .screw-tl { top: 9px; left: 9px; }
-    .screw-tr { top: 9px; right: 9px; }
-    .screw-bl { bottom: 9px; left: 9px; }
-    .screw-br { bottom: 9px; right: 9px; }
-
-    /* Visually-hidden native selects — kept as the state source for Alpine. */
+    /* Visually-hidden native selects, kept as the state source. */
     .sr-only {
       position: absolute !important;
       width: 1px; height: 1px;
@@ -394,19 +478,26 @@
       overflow: hidden; clip: rect(0,0,0,0);
       white-space: nowrap; border: 0;
     }
-    /* App-styled dropdown (vanilla JS). Flat, themed to match the buttons. */
+    /* App-styled dropdown: a picker tile with a chevron. */
     .sel { position: relative; display: inline-block; }
     .sel-btn {
-      background: var(--btn);
-      border: 1px solid var(--btn-border);
-      color: var(--btn-text);
-      border-radius: 3px;
-      padding: 2px 8px;
-      min-width: 40px;
+      padding: 0 22px 0 8px;
+      min-width: 44px;
       text-align: left;
+      color: var(--ink);
+      font-size: 11px;
       cursor: pointer;
+      position: relative;
     }
-    .sel-btn:hover { background: var(--btn-hover); }
+    .sel-btn::after {
+      content: "";
+      position: absolute;
+      right: 8px; top: 50%;
+      width: 5px; height: 5px;
+      border-right: 1.5px solid var(--ink-dim);
+      border-bottom: 1.5px solid var(--ink-dim);
+      transform: translateY(-70%) rotate(45deg);
+    }
     .sel-menu {
       display: none;
       position: absolute;
@@ -414,29 +505,45 @@
       left: 0;
       z-index: 20;
       margin: 0;
-      padding: 4px 0;
       list-style: none;
       min-width: 100%;
-      background: var(--btn);
-      border: 1px solid var(--btn-border);
-      border-radius: 4px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
       max-height: 220px;
       overflow-y: auto;
+      font-family: var(--mono);
+      font-size: 11px;
     }
-    .sel-opt { padding: 4px 12px; color: var(--btn-text); cursor: pointer; }
-    .sel-opt:hover { background: var(--btn-hover); }
-    .sel-opt.sel-active { background: var(--green); color: var(--green-text); }
+    .sel-opt { padding: 4px 12px; color: var(--ink-dim); cursor: pointer; }
+    .sel-opt:hover { background: var(--row-sel); color: var(--ink); }
+    .sel-opt.sel-active { color: var(--ink); box-shadow: inset 2px 0 0 var(--accent); }
     .sel-menu.open { display: block; }
+
+    /* Tiles keep their size; the file name is what gives way. */
+    #header > button, #zoom-bar button, #actions .btn, .num, .sel { flex-shrink: 0; }
+
+    /* Narrow windows: tighter tiles so every control still fits on one row. */
+    @media (max-width: 880px) {
+      #header, #zoom-bar { gap: 4px; padding-left: 8px; padding-right: 8px; }
+      #zoom-btn-sel, #zoom-btn-fit, #btn-stretch, .btn { letter-spacing: 0.02em; }
+      #zoom-btn-sel, #zoom-btn-fit, #btn-stretch { padding: 0 6px; }
+      #zoom-slider { width: 44px; }
+      #header-meta { gap: 8px; padding: 0 8px; font-size: 10px; }
+      #key-label { width: auto; }
+      #zoom-bar label { letter-spacing: 0.04em; }
+      .tempo-divider { margin: 0 1px; }
+      #bpm-label { min-width: 0; }
+      .num-sm { width: 34px; }
+      #target-bpm { width: 46px; }
+      #actions { gap: 4px; padding-left: 8px; padding-right: 8px; }
+      .btn { padding: 0 7px; font-size: 10px; }
+      #btn-process { padding: 0 12px; }
+      #controls { gap: 10px; }
+      .logo-word { font-size: 12px; }
+      #logo .logo-mark { height: 26px; }
+      .control-label { width: 54px; }
+    }
   </style>
 </head>
 <body>
-  <div id="chrome" aria-hidden="true">
-    <span class="screw screw-tl"></span>
-    <span class="screw screw-tr"></span>
-    <span class="screw screw-bl"></span>
-    <span class="screw screw-br"></span>
-  </div>
   <div id="header">
     <span id="close-label">Close</span>
     <button id="btn-close" title="Close (Esc)">×</button>
@@ -541,9 +648,12 @@
 
   <div id="controls">
     <span id="logo" aria-label="Clip Tool v1.0.3">
-      <svg class="logo-arrow" width="22" height="22" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 10.5 L10.5 3.5 M10.5 3.5 H6.2 M10.5 3.5 V7.8" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      <span class="logo-clip">CLIP</span><span class="logo-tool">TOOL</span>
-      <span id="version">v1.0.3</span>
+      <!-- Kerf mark: kerf-audio brand pack, kerf-audio-mark-on-grey.svg -->
+      <svg class="logo-mark" xmlns="http://www.w3.org/2000/svg" viewBox="0.00 0.00 258.19 340.00" aria-hidden="true"><g fill="#f2f2f0"><polygon points="61.35,69.02 0.00,122.71 0.00,251.37 61.35,190.01 61.35,69.02"/><polygon points="196.84,253.08 258.19,196.84 258.19,88.63 196.84,149.98 196.84,253.08"/><polygon points="61.35,196.84 5.11,253.08 0.00,258.19 0.00,340.00 194.43,145.57 258.19,81.81 258.19,69.16 258.19,0.00 61.35,196.84"/><polygon points="93.75,253.08 192.01,253.08 192.01,191.73 155.10,191.73 93.75,253.08"/></g></svg>
+      <span class="logo-text">
+        <span class="logo-word">CLIP TOOL</span>
+        <span id="version">v1.0.3</span>
+      </span>
     </span>
     <div id="control-fields">
       <div class="control-row">

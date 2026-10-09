@@ -1,3 +1,22 @@
+// Screen palette (Kerf Studio): the trace in blue, trim handles in ink,
+// fades in orange, the loop in green, the playhead in pink.
+const SCREEN = {
+  trace: '#3aa0ff',
+  traceOutside: '#5e6066',
+  selection: 'rgba(58,160,255,0.07)',
+  zero: 'rgba(236,236,234,0.14)',
+  bar: 'rgba(236,236,234,0.16)',
+  beat: 'rgba(236,236,234,0.06)',
+  barLabel: '#8d8f95',
+  handle: '#ececea',
+  fade: '#ff9d6a',
+  fadeShade: 'rgba(0,0,0,0.35)',
+  loop: '#1fb28a',
+  loopFill: 'rgba(31,178,138,0.09)',
+  playhead: '#ff8fc9',
+  outline: 'rgba(0,0,0,0.7)',
+};
+
 class WaveformCanvas {
   constructor(canvasEl, containerEl) {
     this.canvas = canvasEl;
@@ -235,7 +254,7 @@ class WaveformCanvas {
     // Draw trim region background
     const trimX1 = this._timeToX(this.trimStart);
     const trimX2 = this._timeToX(this.trimEnd);
-    ctx.fillStyle = 'hsla(140,100%,78%,0.20)';
+    ctx.fillStyle = SCREEN.selection;
     ctx.fillRect(trimX1, 0, trimX2 - trimX1, height);
 
     // Beyond ~2px per peak block the 2000-point envelope turns blocky; switch
@@ -256,7 +275,7 @@ class WaveformCanvas {
       // Zero line
       ctx.globalAlpha = 1;
       ctx.beginPath();
-      ctx.strokeStyle = 'hsla(140,100%,78%,0.45)';
+      ctx.strokeStyle = SCREEN.zero;
       ctx.lineWidth = 1;
       ctx.moveTo(0, yCenter + 0.5);
       ctx.lineTo(width, yCenter + 0.5);
@@ -272,7 +291,7 @@ class WaveformCanvas {
       const lx2 = this._timeToX(this.loopEnd);
       const loopAlpha = this.loopEnabled ? 1 : 0.4;
       ctx.globalAlpha = loopAlpha;
-      ctx.fillStyle = 'hsla(140,80%,70%,0.10)';
+      ctx.fillStyle = SCREEN.loopFill;
       ctx.fillRect(lx1, 0, lx2 - lx1, height);
       this._drawLoopHandle(lx1, height, 'start', loopAlpha);
       this._drawLoopHandle(lx2, height, 'end', loopAlpha);
@@ -292,7 +311,7 @@ class WaveformCanvas {
     if (px >= 0 && px <= width) {
       ctx.globalAlpha = 1;
       ctx.beginPath();
-      ctx.strokeStyle = 'hsla(140,100%,80%,0.9)';
+      ctx.strokeStyle = SCREEN.playhead;
       ctx.lineWidth = 1;
       ctx.moveTo(px + 0.5, 0);
       ctx.lineTo(px + 0.5, height);
@@ -380,7 +399,7 @@ class WaveformCanvas {
 
     const ctx = this.ctx;
     ctx.save();
-    ctx.font = '9px system-ui, sans-serif';
+    ctx.font = '500 9px "IBM Plex Mono", ui-monospace, monospace';
     ctx.textBaseline = 'top';
     const firstK = Math.ceil((fromT - phase) / interval - 1e-6);
     const lastK = Math.floor((toT - phase) / interval + 1e-6);
@@ -390,14 +409,14 @@ class WaveformCanvas {
       const x = this._timeToX(phase + k * interval);
       if (x < -1 || x > width + 1) continue;
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = isBar ? 'hsla(140,60%,65%,0.55)' : 'hsla(140,60%,65%,0.22)';
+      ctx.strokeStyle = isBar ? SCREEN.bar : SCREEN.beat;
       ctx.lineWidth = isBar ? 1 : 0.5;
       ctx.beginPath();
       ctx.moveTo(x + 0.5, 0);
       ctx.lineTo(x + 0.5, height);
       ctx.stroke();
       if (isBar && k >= 0) {
-        ctx.fillStyle = 'hsla(140,60%,80%,0.85)';
+        ctx.fillStyle = SCREEN.barLabel;
         ctx.fillText(String(Math.floor(k / beats) + 1), x + 3, 2);
       }
     }
@@ -413,8 +432,8 @@ class WaveformCanvas {
     const endPeak = Math.min(peakCount, Math.ceil((this.scrollX + width) / pxPerPeak));
 
     // Faded (outside trim)
-    ctx.globalAlpha = 0.42;
-    ctx.strokeStyle = '#c8ffe0';
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = SCREEN.traceOutside;
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = startPeak; i < endPeak; i++) {
@@ -433,6 +452,7 @@ class WaveformCanvas {
 
     // Bright (inside trim)
     ctx.globalAlpha = 1;
+    ctx.strokeStyle = SCREEN.trace;
     ctx.beginPath();
     for (let i = startPeak; i < endPeak; i++) {
       const x = i * pxPerPeak - this.scrollX;
@@ -461,7 +481,7 @@ class WaveformCanvas {
     const sampleY = (v) => yCenter - Math.max(-1, Math.min(1, v * g)) * halfH;
 
     ctx.globalAlpha = 1;
-    ctx.strokeStyle = '#c8ffe0';
+    ctx.strokeStyle = SCREEN.trace;
     ctx.lineWidth = 1;
 
     if (samplesPerPx >= 1) {
@@ -498,7 +518,7 @@ class WaveformCanvas {
       }
       ctx.stroke();
       if (pxPerSample > 6) {
-        ctx.fillStyle = '#c8ffe0';
+        ctx.fillStyle = SCREEN.trace;
         for (let i = iStart; i < iEnd; i++) {
           const x = i * pxPerSample - this.scrollX;
           const y = sampleY(chan[i] * this._envelopeAt(this._xToTime(x)));
@@ -570,7 +590,7 @@ class WaveformCanvas {
           const g = this._fadeGainAt(which, t);
           ctx.lineTo(this._timeToX(t), (1 - g) * height);
         }
-        ctx.strokeStyle = '#c64a3a';
+        ctx.strokeStyle = SCREEN.fade;
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
@@ -579,16 +599,16 @@ class WaveformCanvas {
         ctx.closePath();
         // Subtle now that the waveform itself tapers — the curve line and node
         // remain as the editing affordance.
-        ctx.fillStyle = 'hsla(0,0%,0%,0.18)';
+        ctx.fillStyle = SCREEN.fadeShade;
         ctx.fill();
 
         const node = this._fadeNodeXY(which, height);
         if (node && node.x >= 0 && node.x <= width) {
           ctx.beginPath();
           ctx.arc(node.x, node.y, 4, 0, 2 * Math.PI);
-          ctx.fillStyle = '#c64a3a';
+          ctx.fillStyle = SCREEN.fade;
           ctx.fill();
-          ctx.strokeStyle = 'hsla(0,0%,0%,0.6)';
+          ctx.strokeStyle = SCREEN.outline;
           ctx.lineWidth = 1;
           ctx.stroke();
         }
@@ -598,9 +618,9 @@ class WaveformCanvas {
     // Corner handle — always drawn so a fade can be created by grabbing it.
     if (handle.x >= -8 && handle.x <= width + 8) {
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#c64a3a';
+      ctx.fillStyle = SCREEN.fade;
       ctx.fillRect(handle.x - 4, handle.y - 4, 8, 8);
-      ctx.strokeStyle = 'hsla(0,0%,0%,0.6)';
+      ctx.strokeStyle = SCREEN.outline;
       ctx.lineWidth = 1;
       ctx.strokeRect(handle.x - 4, handle.y - 4, 8, 8);
     }
@@ -609,7 +629,7 @@ class WaveformCanvas {
   _drawHandle(x, height, type) {
     const ctx = this.ctx;
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#c8ffe0';
+    ctx.fillStyle = SCREEN.handle;
     ctx.beginPath();
     if (type === 'start') {
       ctx.moveTo(x, 0);
@@ -624,7 +644,7 @@ class WaveformCanvas {
     }
     ctx.fill();
     ctx.beginPath();
-    ctx.strokeStyle = '#c8ffe0';
+    ctx.strokeStyle = SCREEN.handle;
     ctx.lineWidth = 1.5;
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
@@ -634,7 +654,7 @@ class WaveformCanvas {
   _drawLoopHandle(x, height, type, alpha = 1) {
     const ctx = this.ctx;
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = '#7fd8a0';
+    ctx.fillStyle = SCREEN.loop;
     ctx.beginPath();
     if (type === 'start') {
       ctx.moveTo(x, height);
@@ -649,7 +669,7 @@ class WaveformCanvas {
     }
     ctx.fill();
     ctx.beginPath();
-    ctx.strokeStyle = '#7fd8a0';
+    ctx.strokeStyle = SCREEN.loop;
     ctx.lineWidth = 1.5;
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
@@ -800,6 +820,7 @@ class WaveformCanvas {
     const max = Number(slider.max) || 100;
     const denom = Math.log(this.maxZoom);
     slider.value = denom > 0 ? 1 + (max - 1) * (Math.log(this.zoom) / denom) : 1;
+    slider.style.setProperty('--fill', String(((Number(slider.value) - 1) / (max - 1)) * 100));
   }
 
   _updateTrimInfo() {

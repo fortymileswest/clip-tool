@@ -17,21 +17,25 @@ await fs.mkdir('dist/webview', { recursive: true });
 await fs.copyFile('src/webview/waveform.js', 'dist/webview/waveform.js');
 await fs.copyFile('src/webview/controls.js', 'dist/webview/controls.js');
 
-// Inline Inter (woff2) as base64 @font-face so the self-contained modal needs
-// no external font files. The extension injects this into the modal HTML at the
+// Inline the brand faces (woff2) as base64 @font-face so the self-contained
+// modal needs no external font files and never touches the network: IBM Plex
+// Sans for the interface, IBM Plex Mono for labels and numbers, Michroma for
+// the wordmark only. The extension injects this into the modal HTML at the
 // FONT_FACE_PLACEHOLDER marker.
-const interDir = 'node_modules/@fontsource/inter/files';
-const [inter400, inter600] = await Promise.all([
-  fs.readFile(`${interDir}/inter-latin-400-normal.woff2`),
-  fs.readFile(`${interDir}/inter-latin-600-normal.woff2`),
-]);
-const fontFace = (weight: number, b64: string) =>
-  `@font-face{font-family:'Inter';font-style:normal;font-weight:${weight};`
-  + `font-display:swap;src:url(data:font/woff2;base64,${b64}) format('woff2');}`;
-await fs.writeFile(
-  'dist/webview/fonts.css',
-  `${fontFace(400, inter400.toString('base64'))}\n${fontFace(600, inter600.toString('base64'))}\n`,
-);
+const fonts: Array<[family: string, pkg: string, file: string, weight: number]> = [
+  ['IBM Plex Sans', 'ibm-plex-sans', 'ibm-plex-sans-latin-400-normal', 400],
+  ['IBM Plex Sans', 'ibm-plex-sans', 'ibm-plex-sans-latin-500-normal', 500],
+  ['IBM Plex Mono', 'ibm-plex-mono', 'ibm-plex-mono-latin-400-normal', 400],
+  ['IBM Plex Mono', 'ibm-plex-mono', 'ibm-plex-mono-latin-500-normal', 500],
+  ['IBM Plex Mono', 'ibm-plex-mono', 'ibm-plex-mono-latin-600-normal', 600],
+  ['Michroma', 'michroma', 'michroma-latin-400-normal', 400],
+];
+const fontFaces = await Promise.all(fonts.map(async ([family, pkg, file, weight]) => {
+  const b64 = (await fs.readFile(`node_modules/@fontsource/${pkg}/files/${file}.woff2`)).toString('base64');
+  return `@font-face{font-family:'${family}';font-style:normal;font-weight:${weight};`
+    + `font-display:block;src:url(data:font/woff2;base64,${b64}) format('woff2');}`;
+}));
+await fs.writeFile('dist/webview/fonts.css', `${fontFaces.join('\n')}\n`);
 
 // Timestretch is shared DSP: TypeScript for the Node processor, compiled
 // here to a browser global for the editor webview.

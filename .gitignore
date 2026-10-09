@@ -12,3 +12,4 @@ vendor/*.tgz
 
 # Local lockfile (the SDK is a local-file dependency, not registry-resolvable)
 package-lock.json
+preview/out/

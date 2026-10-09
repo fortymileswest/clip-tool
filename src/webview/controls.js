@@ -309,6 +309,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const container = document.getElementById('waveform-container');
   const canvas = document.getElementById('waveform-canvas');
   const waveform = new window.WaveformCanvas(canvas, container);
+  // The grid numerals use the bundled mono face; redraw once it has loaded.
+  if (document.fonts) document.fonts.ready.then(() => waveform.draw());
   waveform.load(data);
 
   // Keyboard transport: space toggles preview; ←/→ scroll the view to the
@@ -407,21 +409,19 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateStretchUi() {
     if (!stretchOn) {
       btnStretch.textContent = 'Stretch: OFF';
-      btnStretch.style.background = '';
-      btnStretch.style.color = '';
-      targetBpmInput.style.borderColor = '';
+      btnStretch.classList.remove('is-on');
+      targetBpmInput.classList.remove('is-error');
       return;
     }
-    btnStretch.style.background = 'hsl(200,80%,40%)';
-    btnStretch.style.color = '#fff';
+    btnStretch.classList.add('is-on');
     const r = stretchRatio();
     if (r === 1) {
       // No usable target BPM — say so instead of silently doing nothing.
       btnStretch.textContent = 'Stretch: set BPM →';
-      targetBpmInput.style.borderColor = 'hsl(0,80%,60%)';
+      targetBpmInput.classList.add('is-error');
     } else {
       btnStretch.textContent = `Stretch: ×${r.toFixed(3)}`;
-      targetBpmInput.style.borderColor = '';
+      targetBpmInput.classList.remove('is-error');
     }
   }
 
@@ -458,7 +458,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // Gain
   const gainSlider = document.getElementById('gain-slider');
   const gainValue = document.getElementById('gain-value');
+  const paintGainFill = () => {
+    const min = Number(gainSlider.min), max = Number(gainSlider.max);
+    gainSlider.style.setProperty('--fill', String(((Number(gainSlider.value) - min) / (max - min)) * 100));
+  };
+  paintGainFill();
   gainSlider.addEventListener('input', () => {
+    paintGainFill();
     const db = Number(gainSlider.value);
     gainValue.textContent = `${db >= 0 ? '+' : ''}${db.toFixed(1)} dB`;
     waveform.setGain(db);
@@ -883,8 +889,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loopEnabled = on;
     waveform.loopEnabled = on;
     btnLoop.textContent = on ? 'Loop: ON' : 'Loop: OFF';
-    btnLoop.style.background = on ? 'hsl(200,80%,40%)' : '';
-    btnLoop.style.color = on ? '#fff' : '';
+    btnLoop.classList.toggle('is-on', on);
     waveform.draw();
   }
 
@@ -907,8 +912,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnZc.addEventListener('click', () => {
     zcEnabled = !zcEnabled;
     waveform.snapZC = zcEnabled;
-    btnZc.style.background = zcEnabled ? 'hsl(200,80%,40%)' : '';
-    btnZc.style.color = zcEnabled ? '#fff' : '';
+    btnZc.classList.toggle('is-on', zcEnabled);
     if (zcEnabled) {
       // Snap the current points immediately.
       waveform.trimStart = Math.min(waveform._snapToZC(waveform.trimStart), waveform.trimEnd - 0.001);
@@ -927,8 +931,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDc = document.getElementById('btn-dc');
   btnDc.addEventListener('click', () => {
     dcEnabled = !dcEnabled;
-    btnDc.style.background = dcEnabled ? 'hsl(200,80%,40%)' : '';
-    btnDc.style.color = dcEnabled ? '#fff' : '';
+    btnDc.classList.toggle('is-on', dcEnabled);
     btnDc.blur();
     stretchCache.key = ''; // invalidate cached stretched preview
     stopPreview();
@@ -940,8 +943,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let clipGuardEnabled = true;
   const btnClipGuard = document.getElementById('btn-clipguard');
   const paintClipGuard = () => {
-    btnClipGuard.style.background = clipGuardEnabled ? 'hsl(200,80%,40%)' : '';
-    btnClipGuard.style.color = clipGuardEnabled ? '#fff' : '';
+    btnClipGuard.classList.toggle('is-on', clipGuardEnabled);
   };
   paintClipGuard();
   btnClipGuard.addEventListener('click', () => {
@@ -1156,7 +1158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const menu = document.createElement('ul');
     menu.className = 'sel-menu';
     const sync = () => {
-      btn.textContent = sel.value + ' ▾';
+      btn.textContent = sel.value; // the chevron is drawn in CSS
       menu.querySelectorAll('.sel-opt').forEach((o) =>
         o.classList.toggle('sel-active', o.dataset.val === sel.value));
     };
