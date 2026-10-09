@@ -21,6 +21,7 @@
       --ink:#f2f2f0; --ink-dim:#d0d0d3; --ink-faint:#9a9a9e;
       --screen-ink:#ececea; --screen-dim:#8d8f95; --screen-faint:#5e6066;
       --accent:#27d0a8; --accent-hi:#3ee0b9; --flag-ink:#121212;
+      --cap-top:#3a3b3f; --cap-bottom:#1b1c1f;
       --blue:#3aa0ff; --green:#1fb28a; --orange:#ff9d6a; --pink:#ff8fc9; --red:#ff4f6a;
       --sans:'IBM Plex Sans', system-ui, sans-serif;
       --mono:'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
@@ -151,14 +152,14 @@
     #logo {
       display: inline-flex;
       align-items: center;
-      gap: 10px;
+      gap: 14px;
       flex-shrink: 0;
     }
-    #logo .logo-mark { display: block; height: 30px; width: auto; }
-    #logo .logo-text { display: flex; flex-direction: column; gap: 5px; }
+    #logo .logo-mark { display: block; height: 48px; width: auto; }
+    #logo .logo-text { display: flex; flex-direction: column; gap: 8px; }
     .logo-word {
       font-family: var(--display);
-      font-size: 14px;
+      font-size: 22px;
       line-height: 1;
       letter-spacing: 0.22em;
       color: var(--ink);
@@ -167,7 +168,7 @@
     #version {
       font-family: var(--mono);
       font-weight: 500;
-      font-size: 10px;
+      font-size: 11px;
       line-height: 1;
       color: var(--ink-dim);
       letter-spacing: 0.1em;
@@ -237,26 +238,34 @@
       box-shadow: inset 0 1px 1px rgba(0,0,0,0.6);
     }
     #gain-slider::-moz-range-track { height: 8px; border-radius: 1px; background: var(--seam); }
+    /* Fader caps, as on a mixer: a dark cap in Studio's cap colours, lit
+       from above, with a bright line across the middle to read the value by. */
     #zoom-slider::-webkit-slider-thumb,
     #gain-slider::-webkit-slider-thumb {
       -webkit-appearance: none;
       appearance: none;
-      width: 5px; height: 16px;
-      margin-top: -5px;
-      border-radius: 1px;
-      background: var(--ink);
-      border: 1px solid var(--field-edge);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.5);
+      width: 14px; height: 22px;
+      margin-top: -7px;
+      border-radius: 2px;
+      border: 1px solid #0c0c0d;
+      background:
+        linear-gradient(var(--ink), var(--ink)) center / 100% 2px no-repeat,
+        linear-gradient(180deg, #4a4b50 0%, var(--cap-top) 18%, var(--cap-bottom) 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 2px 3px rgba(0,0,0,0.55);
     }
-    #zoom-slider::-webkit-slider-thumb { margin-top: -6px; }
-    #gain-slider::-webkit-slider-thumb { width: 6px; height: 18px; }
+    #zoom-slider::-webkit-slider-thumb { width: 10px; height: 16px; margin-top: -5px; }
     #zoom-slider::-moz-range-thumb,
     #gain-slider::-moz-range-thumb {
-      width: 5px; height: 16px;
-      border-radius: 1px;
-      background: var(--ink);
-      border: 1px solid var(--field-edge);
+      width: 12px; height: 20px;
+      border-radius: 2px;
+      border: 1px solid #0c0c0d;
+      background:
+        linear-gradient(var(--ink), var(--ink)) center / 100% 2px no-repeat,
+        linear-gradient(180deg, #4a4b50 0%, var(--cap-top) 18%, var(--cap-bottom) 100%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.18), 0 2px 3px rgba(0,0,0,0.55);
     }
+    #zoom-slider::-moz-range-thumb { width: 8px; height: 14px; }
+    #gain-slider { height: 24px; }
 
     /* Tiles: dark recessed buttons and fields, uppercase mono labels. */
     #zoom-btn-minus, #zoom-btn-plus, #zoom-btn-sel, #zoom-btn-fit,
@@ -537,8 +546,8 @@
       .btn { padding: 0 7px; font-size: 10px; }
       #btn-process { padding: 0 12px; }
       #controls { gap: 10px; }
-      .logo-word { font-size: 12px; }
-      #logo .logo-mark { height: 26px; }
+      .logo-word { font-size: 18px; }
+      #logo .logo-mark { height: 40px; }
       .control-label { width: 54px; }
     }
   </style>
