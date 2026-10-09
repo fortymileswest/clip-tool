@@ -1,5 +1,5 @@
-// Screen palette (Kerf Studio): the trace in blue, trim handles in ink,
-// fades in orange, the loop in green, the playhead in pink.
+// Screen palette (Kerf Studio): the trace in blue, trim handles in the teal
+// accent, fades in orange, the loop in green, the playhead in pink.
 const SCREEN = {
   trace: '#3aa0ff',
   traceOutside: '#5e6066',
@@ -8,7 +8,7 @@ const SCREEN = {
   bar: 'rgba(236,236,234,0.16)',
   beat: 'rgba(236,236,234,0.06)',
   barLabel: '#8d8f95',
-  handle: '#ececea',
+  handle: '#27d0a8',
   fade: '#ff9d6a',
   fadeShade: 'rgba(0,0,0,0.35)',
   loop: '#1fb28a',
