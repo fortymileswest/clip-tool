@@ -59,7 +59,9 @@ turning a rough chop into something playable without leaving Live.
 - **Fades** in and out with Linear, Exponential, Logarithmic or S-curve shapes
   (right-click), with draggable length and a mid-curve bend handle.
 - A **Loop** region with its own handles and an on/off toggle.
-- A pitch-preserving, loop-seamless **time-stretch** to a target BPM.
+- A pitch-preserving, loop-seamless **time-stretch** to a target BPM, from a
+  quarter to four times the length (the Stretch button shows MIN or MAX when the
+  target BPM asks for more).
 - **Pitch** shifting in semitones, with grain **Window** and **Transient**
   controls for tuning the character.
 
@@ -163,6 +165,13 @@ The original sample is left alone. The result lands in
   heaviest operations, and the longer the clip the longer the render. The
   progress bar climbs steadily through the render, so a moving bar (even a slow
   one) means it's working, not stuck. Larger pitch shifts take the longest.
+- **Very long clips open without audio preview.** Above 128 MB of rendered audio
+  (roughly 11 to 15 minutes of stereo, depending on Live's recording bit depth)
+  the editor shows the waveform outline and a note saying so. Preview, sample
+  zoom, ZC and Trim to Selection are off, but every edit and all three outputs
+  still work on the full clip.
+- **If something fails,** Clip Tool now says what went wrong in a small dialog
+  instead of closing silently.
 
 The header shows the filename and a readout of the detected key, sample rate,
 channels and length. Tempo, pitch and time-stretch controls sit just below it,
@@ -212,7 +221,7 @@ that would otherwise fall apart in mono.
   **Transient** to keep the hits punchy.
 - **Lean into the lo-fi stretch:** the stretch and pitch are deliberately rough
   for now (see the note above), so push them for character rather than for clean
-  results. Extreme ratios and small grain windows are a good way to stumble onto
+  results. Ratios near the 0.25× and 4× limits and small grain windows are a good way to stumble onto
   unexpected textures.
 
 ## Build from source
@@ -227,10 +236,10 @@ npm run package    # build and produce clip-tool.ablx
 npm test           # run the test suite
 ```
 
-Building needs the **Ableton Extensions SDK** (a beta supplied by Ableton). It
-isn't on npm and can't be redistributed here, so drop your own copy of the two
-`.tgz` files into `vendor/` (see [`vendor/README.md`](vendor/README.md)) before
-running `npm install`.
+Building needs the **Ableton Extensions SDK 1.0.0-beta.1** (a beta supplied by
+Ableton) and **Node.js 24.16 or later**. The SDK isn't on npm and can't be
+redistributed here, so drop your own copy of the two `.tgz` files into `vendor/`
+(see [`vendor/README.md`](vendor/README.md)) before running `npm install`.
 
 To run it live against Live's Extension Host, create a `.env` with the host path:
 
@@ -246,7 +255,10 @@ EXTENSION_HOST_PATH=/Applications/Ableton Live 12 Beta.app/Contents/Helpers/Exte
   result back.
 - `src/processor.ts`, `src/fades.ts` and `src/timestretch.ts` hold the DSP,
   compiled once for Node and once as browser globals so the preview and the final
-  render use the same maths.
+  render use the same maths. `src/editRange.ts` (the range each button renders,
+  and the stretch limits) is shared the same way.
+- `src/wavDecoder.ts` reads Live's render (PCM, float and extensible WAV), and
+  `src/userMessages.ts` holds the error dialog and the long-clip notice.
 - `src/webview/` is the editor itself (`index.html`, `waveform.js`,
   `controls.js`), plain HTML, CSS and JavaScript with no framework.
 
