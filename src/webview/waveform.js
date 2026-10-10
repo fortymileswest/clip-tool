@@ -24,6 +24,7 @@ class WaveformCanvas {
     this.ctx = canvasEl.getContext('2d');
     this.data = null;
     this.samples = null;        // raw Float32Array per channel, set once audio is decoded
+    this.samplesRate = 0;       // rate of `samples` (the AudioContext's, not the file's)
     this.displaySamples = null; // samples after channel-mode derivation
     this.channelMode = 'stereo';
     this.zoom = 1;
@@ -57,6 +58,7 @@ class WaveformCanvas {
     // peaks (which threw mid-draw and aborted a trim, reverting the channel
     // view to stereo). setSampleData repopulates them.
     this.samples = null;
+    this.samplesRate = 0;
     this.displaySamples = null;
     // Stale tempo no longer applies to the new audio; re-detected after load.
     this.detectedBpm = null;
@@ -80,8 +82,19 @@ class WaveformCanvas {
   }
 
   // Full-resolution audio decoded by controls.js — enables sample-level zoom.
-  setSampleData(channels) {
+  // decodeAudioData resamples to the AudioContext's rate, which can differ from
+  // the file's (e.g. a 44.1 kHz file in a 48 kHz context), so the decoded
+  // buffer's own rate is stored and used for every sample index <-> time map.
+  setSampleData(channels, sampleRate) {
     this.samples = channels;
+    this.samplesRate = sampleRate > 0
+      ? sampleRate
+      : (this.data && this.data.duration > 0 ? channels[0].length / this.data.duration : 0);
+    // Keep "one sample spans ~8px at max zoom" true for the decoded buffer.
+    if (this.data && this.samplesRate > 0) {
+      const frames = this.data.duration * this.samplesRate;
+      this.maxZoom = Math.max(20, Math.ceil((frames * 8) / Math.max(1, this.canvas.width || 960)));
+    }
     this.setChannelMode(this.channelMode);
   }
 
@@ -189,8 +202,8 @@ class WaveformCanvas {
   // one second outward. Returns t unchanged if audio is not decoded yet.
   _snapToZC(t) {
     const s = this.samples;
-    if (!s || !this.data) return t;
-    const sr = this.data.sampleRate;
+    if (!s || !this.data || !this.samplesRate) return t;
+    const sr = this.samplesRate;
     const L = s[0];
     const R = s[1];
     const n = L.length;

@@ -821,7 +821,7 @@ document.addEventListener('DOMContentLoaded', () => {
       for (let c = 0; c < buf.numberOfChannels; c++) {
         chans.push(buf.getChannelData(c));
       }
-      waveform.setSampleData(chans);
+      waveform.setSampleData(chans, buf.sampleRate);
       updateKeyLabel(chans, buf.sampleRate);
     } catch (e) {
       console.error('[Audio Editor] audio decode', e);
@@ -1013,7 +1013,7 @@ document.addEventListener('DOMContentLoaded', () => {
       channels: data.channels,
       fileName: data.fileName,
     });
-    waveform.setSampleData(chans);
+    waveform.setSampleData(chans, sr);
     waveform.setChannelMode(selectedChannel);
     waveform.setPlayhead(0);
     // Zoom to fit the freshly trimmed view.
