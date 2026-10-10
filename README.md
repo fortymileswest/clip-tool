@@ -142,7 +142,8 @@ Mouse:
 
 ## Install (no dev tools needed)
 
-> Requires Ableton Live 12 with Extensions support (currently the Live 12 beta).
+> Requires Ableton Live 12 with Extensions support (currently the Live 12 beta),
+> on macOS or Windows.
 
 1. Download **`clip-tool.ablx`** from the [Releases](../../releases) page.
 2. In Live, open **Preferences → Extensions**.
@@ -175,6 +176,8 @@ The original sample is left alone. The result lands in
   heaviest operations, and the longer the clip the longer the render. The
   progress bar climbs steadily through the render, so a moving bar (even a slow
   one) means it's working, not stuck. Larger pitch shifts take the longest.
+  Changed your mind? **Cancel** in the progress dialog stops the render and
+  leaves your Set as it was.
 - **Very long clips open without audio preview.** Above 128 MB of rendered audio
   (roughly 11 to 15 minutes of stereo, depending on Live's recording bit depth)
   the editor shows the waveform outline and a note saying so. Preview, sample
@@ -186,7 +189,8 @@ The original sample is left alone. The result lands in
 The header shows the filename and a readout of the detected key, sample rate,
 channels and length. Tempo, pitch and time-stretch controls sit just below it,
 with the detected
-tempo, Bars and Beats, pitch and grain settings, and the target BPM:
+tempo, Bars and Beats, pitch and grain settings, and the target BPM (here
+stretching a 120 BPM break to 100):
 
 ![Tempo, pitch and time-stretch controls](docs/screenshots/controls.png)
 

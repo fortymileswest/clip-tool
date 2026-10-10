@@ -522,7 +522,7 @@ class WaveformCanvas {
     const startPeak = Math.floor(this.scrollX / pxPerPeak);
     const endPeak = Math.min(peakCount, Math.ceil((this.scrollX + width) / pxPerPeak));
 
-    // Faded (outside trim)
+    // Dimmed (outside the rendered range)
     ctx.globalAlpha = 0.55;
     ctx.strokeStyle = SCREEN.traceOutside;
     ctx.lineWidth = 1;
@@ -541,14 +541,14 @@ class WaveformCanvas {
     }
     ctx.stroke();
 
-    // Bright (inside trim)
+    // Bright (inside the rendered range: the loop while Loop is on, else the selection)
     ctx.globalAlpha = 1;
     ctx.strokeStyle = SCREEN.trace;
     ctx.beginPath();
     for (let i = startPeak; i < endPeak; i++) {
       const x = i * pxPerPeak - this.scrollX;
       const t = this._xToTime(x);
-      if (t < this.trimStart || t > this.trimEnd) continue;
+      if (t < this.renderStart || t > this.renderEnd) continue;
       const env = this._envelopeAt(t);
       const minVal = chPeaks[i * 2] * this.gainLinear * env;
       const maxVal = chPeaks[i * 2 + 1] * this.gainLinear * env;
@@ -633,7 +633,10 @@ class WaveformCanvas {
 
   // Combined fade envelope (fade-in × fade-out) at time t; 1 when no fades.
   // Applied to the drawn waveform amplitude so the taper is visible directly.
+  // Audio outside the rendered range is left as is (it is drawn dimmed), so
+  // nothing looks deleted that is only excluded.
   _envelopeAt(t) {
+    if (t < this.renderStart || t > this.renderEnd) return 1;
     let g = 1;
     if (this.fadeIn.len > 0) g *= this._fadeGainAt('in', t);
     if (this.fadeOut.len > 0) g *= this._fadeGainAt('out', t);
