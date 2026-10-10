@@ -41,7 +41,7 @@ turning a rough chop into something playable without leaving Live.
 
 ## Features
 
-![Zoomed in to the waveform](docs/screenshots/waveform-zoom.png)
+![Zoomed all the way in: single samples drawn as dots where a kick starts](docs/screenshots/waveform-zoom.png)
 
 **Editing**
 
