@@ -1034,104 +1034,52 @@ document.addEventListener('DOMContentLoaded', () => {
     updateKeyLabel(chans, sr);
   });
 
-  // True once the working view has been narrowed by Trim to Selection: either
-  // its origin moved along the original render (viewOffset) or its length shrank.
-  // The backend always renders from the original file, so Process/Copy/Simpler
-  // must crop it back to this view — even with no active loop — or the trim is
-  // silently discarded.
-  const TRIM_EPS = 1e-6;
-  const hasTrimmedView = () =>
-    viewOffset > TRIM_EPS || currentDuration < originalDuration - TRIM_EPS;
-
-  // Process — replaces the original clip. Editor-local times map back through
-  // viewOffset. To cut a sample down, use Trim to Selection (which narrows the
-  // working view); Process then renders that view. Fades also force a crop to
-  // the selection, since they are anchored to its edges.
-  document.getElementById('btn-process').addEventListener('click', () => {
-    setLed(true);
-    const hasFades = !!(fadeResult('in') || fadeResult('out'));
-    const hasExplicitSelection = waveform.hasLoop && loopEnabled;
-    let crop, trimStart, trimEnd;
-    if (hasFades || hasExplicitSelection || hasTrimmedView()) {
-      crop = true;
-      trimStart = viewOffset + waveform.trimStart;
-      trimEnd = viewOffset + waveform.trimEnd;
-    } else {
-      crop = false;
-      trimStart = waveform.trimStart;
-      trimEnd = waveform.trimEnd;
-    }
-    closeWithResultOnce({
+  // Process, Copy to Arrangement and Simpler all send the same range, worked
+  // out by EditRange.renderRange (shared with the tests): crop to the selection
+  // whenever there are fades, an enabled selection, or a trimmed view, so each
+  // renders exactly what the preview plays. Editor-local times map back to the
+  // original render through viewOffset.
+  function resultFor(mode) {
+    const fadeIn = fadeResult('in');
+    const fadeOut = fadeResult('out');
+    const range = EditRange.renderRange({
+      hasFades: !!(fadeIn || fadeOut),
+      hasExplicitSelection: !!(waveform.hasLoop && loopEnabled),
+      viewOffset,
+      currentDuration,
+      originalDuration,
+      trimStart: waveform.trimStart,
+      trimEnd: waveform.trimEnd,
+    });
+    return {
       cancelled: false,
-      mode: 'replace',
-      trimStart,
-      trimEnd,
+      mode,
+      trimStart: range.trimStart,
+      trimEnd: range.trimEnd,
       gain_dB: Number(gainSlider.value),
       channel: selectedChannel,
-      crop,
+      crop: range.crop,
       stretchRatio: stretchRatio(),
       stretchCyclic: !!(waveform.hasLoop && loopEnabled),
-      fadeIn: fadeResult('in'),
-      fadeOut: fadeResult('out'),
+      fadeIn,
+      fadeOut,
       removeDc: dcEnabled,
       preventClipping: clipGuardEnabled,
       pitchSemitones: pitchSemitones(),
       stretchWindowMs: stretchWindowMs(),
       stretchTransient: stretchTransient(),
       outputName: customStem,
-    });
-  });
+    };
+  }
 
-  // Copy to Arrangement — renders the trim selection as a new clip after the
-  // original, leaving the original in place. Only crops if explicitly selected via loop.
-  document.getElementById('btn-copy').addEventListener('click', () => {
-    setLed(true);
-    const copyHasExplicitSelection = waveform.hasLoop && loopEnabled;
-    closeWithResultOnce({
-      cancelled: false,
-      mode: 'copy',
-      trimStart: viewOffset + waveform.trimStart,
-      trimEnd: viewOffset + waveform.trimEnd,
-      gain_dB: Number(gainSlider.value),
-      channel: selectedChannel,
-      crop: copyHasExplicitSelection || hasTrimmedView(),
-      stretchRatio: stretchRatio(),
-      stretchCyclic: !!(waveform.hasLoop && loopEnabled),
-      fadeIn: fadeResult('in'),
-      fadeOut: fadeResult('out'),
-      removeDc: dcEnabled,
-      preventClipping: clipGuardEnabled,
-      pitchSemitones: pitchSemitones(),
-      stretchWindowMs: stretchWindowMs(),
-      stretchTransient: stretchTransient(),
-      outputName: customStem,
+  // Process replaces the original clip; Copy to Arrangement adds the result
+  // after it; Simpler drops it onto a Simpler on a new MIDI track.
+  for (const [id, mode] of [['btn-process', 'replace'], ['btn-copy', 'copy'], ['btn-simpler', 'simpler']]) {
+    document.getElementById(id).addEventListener('click', () => {
+      setLed(true);
+      closeWithResultOnce(resultFor(mode));
     });
-  });
-
-  // Simpler — process the selection and drop it onto a Simpler on a new track.
-  document.getElementById('btn-simpler').addEventListener('click', () => {
-    setLed(true);
-    const simplerHasExplicitSelection = waveform.hasLoop && loopEnabled;
-    closeWithResultOnce({
-      cancelled: false,
-      mode: 'simpler',
-      trimStart: viewOffset + waveform.trimStart,
-      trimEnd: viewOffset + waveform.trimEnd,
-      gain_dB: Number(gainSlider.value),
-      channel: selectedChannel,
-      crop: simplerHasExplicitSelection || hasTrimmedView(),
-      stretchRatio: stretchRatio(),
-      stretchCyclic: !!(waveform.hasLoop && loopEnabled),
-      fadeIn: fadeResult('in'),
-      fadeOut: fadeResult('out'),
-      removeDc: dcEnabled,
-      preventClipping: clipGuardEnabled,
-      pitchSemitones: pitchSemitones(),
-      stretchWindowMs: stretchWindowMs(),
-      stretchTransient: stretchTransient(),
-      outputName: customStem,
-    });
-  });
+  }
 
   // Fades are anchored to the selection edges in the editor; the processed
   // output starts/ends there too (crop or trimmed view), so only the clamped

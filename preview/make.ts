@@ -75,11 +75,12 @@ data.fileName = 'Break 120.wav';
 const b64 = (await fs.readFile(wavPath)).toString('base64');
 await fs.writeFile(path.join(outDir, 'audio-data.js'), `window.AUDIO_WAV_B64="${b64}";`);
 
-const [html, fontsCss, timestretchJs, fadesJs, waveformJs, controlsJs] = await Promise.all([
+const [html, fontsCss, timestretchJs, fadesJs, editRangeJs, waveformJs, controlsJs] = await Promise.all([
   fs.readFile(path.join(root, 'src', 'webview', 'index.html'), 'utf-8'),
   fs.readFile(path.join(dist, 'fonts.css'), 'utf-8'),
   fs.readFile(path.join(dist, 'timestretch.js'), 'utf-8'),
   fs.readFile(path.join(dist, 'fades.js'), 'utf-8'),
+  fs.readFile(path.join(dist, 'editrange.js'), 'utf-8'),
   fs.readFile(path.join(dist, 'waveform.js'), 'utf-8'),
   fs.readFile(path.join(dist, 'controls.js'), 'utf-8'),
 ]);
@@ -96,6 +97,7 @@ const page = html
     `<script src="audio-data.js"></script>\n<script>\n${timestretchJs}\n</script>`,
   )
   .replace('<script src="fades.js"></script>', `<script>\n${fadesJs}\n</script>`)
+  .replace('<script src="editrange.js"></script>', `<script>\n${editRangeJs}\n</script>`)
   .replace('<script src="waveform.js"></script>', `<script>\n${waveformJs}\n</script>`)
   .replace('<script src="controls.js"></script>', `<script>\n${controlsJs}\n</script>`);
 await fs.writeFile(path.join(outDir, 'index.html'), page);

@@ -56,4 +56,13 @@ await esbuild.build({
   outfile: 'dist/webview/fades.js',
 });
 
+// The render range shared by the editor's Process/Copy/Simpler buttons.
+await esbuild.build({
+  entryPoints: ['src/editRange.ts'],
+  bundle: true,
+  format: 'iife',
+  globalName: 'EditRange',
+  outfile: 'dist/webview/editrange.js',
+});
+
 console.log('Build complete → dist/extension.cjs');

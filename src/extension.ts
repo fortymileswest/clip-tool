@@ -43,6 +43,7 @@ function buildModalHtml(
   controlsJs: string,
   timestretchJs: string,
   fadesJs: string,
+  editRangeJs: string,
   fontsCss: string,
 ): string {
   // Escape '<' so a value like a filename containing "</script>" cannot close
@@ -70,6 +71,7 @@ function buildModalHtml(
       `<script src="${audioDataSrc}" onerror="window.AUDIO_WAV_LOAD_FAILED=true"></script>\n<script>\n${timestretchJs}\n</script>`,
     )
     .replace('<script src="fades.js"></script>', `<script>\n${fadesJs}\n</script>`)
+    .replace('<script src="editrange.js"></script>', `<script>\n${editRangeJs}\n</script>`)
     .replace('<script src="waveform.js"></script>', `<script>\n${waveformJs}\n</script>`)
     .replace('<script src="controls.js"></script>', `<script>\n${controlsJs}\n</script>`);
 }
@@ -79,11 +81,12 @@ export async function activate(activation: ActivationContext) {
 
   // Cache webview assets once at activation — they are static files that do not change at runtime.
   const webviewDir = path.join(__dirname, 'webview');
-  const [waveformJs, controlsJs, timestretchJs, fadesJs, fontsCss] = await Promise.all([
+  const [waveformJs, controlsJs, timestretchJs, fadesJs, editRangeJs, fontsCss] = await Promise.all([
     fs.readFile(path.join(webviewDir, 'waveform.js'), 'utf-8'),
     fs.readFile(path.join(webviewDir, 'controls.js'), 'utf-8'),
     fs.readFile(path.join(webviewDir, 'timestretch.js'), 'utf-8'),
     fs.readFile(path.join(webviewDir, 'fades.js'), 'utf-8'),
+    fs.readFile(path.join(webviewDir, 'editrange.js'), 'utf-8'),
     fs.readFile(path.join(webviewDir, 'fonts.css'), 'utf-8'),
   ]);
 
@@ -139,7 +142,7 @@ export async function activate(activation: ActivationContext) {
     // the whole tens-of-MB payload (which would copy and scan it a second time).
     await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
 
-    const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, fontsCss);
+    const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, editRangeJs, fontsCss);
 
     // Serve from a file: URL — the audio subresource sits in the same directory.
     const htmlPath = path.join(tempDir, `audio-editor-ui-${stamp}.html`);
