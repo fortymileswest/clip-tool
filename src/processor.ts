@@ -2,6 +2,7 @@ import { decodeWav } from './wavDecoder.js';
 import { encodeWavFile } from './wavEncoder.js';
 import { stretchCyclic } from './timestretch.js';
 import { applyFades } from './fades.js';
+import { clampStretchRatio } from './editRange.js';
 import type { FadeSpec } from './fades.js';
 
 export type ChannelMode = 'left' | 'right' | 'mixed' | 'stereo' | 'side';
@@ -158,6 +159,11 @@ export function processSamples(
 }
 
 export async function processAudio(opts: ProcessOptions, onProgress?: (progress: number) => void): Promise<void> {
+  // The editor already clamps the ratio and shows it; clamp here too so no
+  // caller can ask for an unbounded stretch.
+  if (opts.stretchRatio !== undefined) {
+    opts = { ...opts, stretchRatio: clampStretchRatio(opts.stretchRatio).ratio };
+  }
   const hasStretch = !!opts.stretchRatio && Math.abs(opts.stretchRatio - 1) > 1e-3;
   const hasPitch = !!opts.pitchSemitones && Math.abs(opts.pitchSemitones) > 1e-6;
   const willStretch = hasStretch || hasPitch;

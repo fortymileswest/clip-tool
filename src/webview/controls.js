@@ -367,6 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Timestretch to target BPM (pitch-preserving WSOLA, loop-safe).
   let stretchOn = false;
   const btnStretch = document.getElementById('btn-stretch');
+  const BASE_STRETCH_TITLE = btnStretch.title;
   const targetBpmInput = document.getElementById('target-bpm');
   let stretchCache = { key: '', buffer: null };
 
@@ -382,13 +383,16 @@ document.addEventListener('DOMContentLoaded', () => {
     return len > 0 ? (bars * beats * 60) / len : 0;
   }
 
-  function stretchRatio() {
-    if (!stretchOn) return 1;
+  // The requested stretch, clamped to EditRange's 0.25–4× limits; `limit`
+  // says when the clamp applied so the button can show it.
+  function stretchState() {
+    if (!stretchOn) return { ratio: 1, limit: null };
     const target = Number(targetBpmInput.value);
     const cur = currentBpm();
-    if (!target || target < 20 || target > 999 || !cur) return 1;
-    return cur / target; // slower target -> longer audio
+    if (!target || target < 20 || target > 999 || !cur) return { ratio: 1, limit: null };
+    return EditRange.clampStretchRatio(cur / target); // slower target -> longer audio
   }
+  const stretchRatio = () => stretchState().ratio;
 
   // Pitch / granular-character controls (apply to preview, Process and Copy).
   const pitchInput = document.getElementById('pitch-input');
@@ -414,10 +418,18 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     btnStretch.classList.add('is-on');
-    const r = stretchRatio();
-    if (r === 1) {
+    const { ratio: r, limit } = stretchState();
+    btnStretch.title = BASE_STRETCH_TITLE;
+    if (r === 1 && !limit) {
       // No usable target BPM — say so instead of silently doing nothing.
       btnStretch.textContent = 'Stretch: set BPM →';
+      targetBpmInput.classList.add('is-error');
+    } else if (limit) {
+      // Outside 0.25–4×: show the clamped ratio and flag the BPM field.
+      const cur = currentBpm();
+      btnStretch.textContent = `Stretch: ×${r.toFixed(2)} ${limit}`;
+      btnStretch.title = `Limited to ${EditRange.MIN_STRETCH}–${EditRange.MAX_STRETCH}× `
+        + `(${(cur / EditRange.MAX_STRETCH).toFixed(1)}–${(cur / EditRange.MIN_STRETCH).toFixed(1)} BPM for this clip)`;
       targetBpmInput.classList.add('is-error');
     } else {
       btnStretch.textContent = `Stretch: ×${r.toFixed(3)}`;
