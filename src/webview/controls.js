@@ -507,14 +507,27 @@ document.addEventListener('DOMContentLoaded', () => {
   // when it was inlined ahead of the UI, left the webview blank until a restart
   // (issue #1). file: URLs are fetched as a script subresource (allowed) rather
   // than via fetch()/XHR (blocked cross-origin in the modal webview).
+  // Tell the user when preview is unavailable, in the warning strip under the
+  // controls, rather than leaving Preview silently doing nothing.
+  const warningEl = document.getElementById('warning');
+  function showWarning(text) {
+    if (!warningEl) return;
+    warningEl.textContent = text;
+    warningEl.style.display = 'block';
+  }
+  if (data.previewNotice) showWarning(data.previewNotice);
+
   async function getDecodedBuffer() {
     if (decodedBuffer) return decodedBuffer;
     if (decodePromise) return decodePromise;
     decodePromise = (async () => {
       if (!window.AUDIO_WAV_B64) {
-        console.error(window.AUDIO_WAV_LOAD_FAILED
-          ? '[clip-tool] audio data subresource failed to load — preview unavailable'
-          : '[clip-tool] audio data not yet available');
+        if (window.AUDIO_WAV_LOAD_FAILED) {
+          console.error('[clip-tool] audio data subresource failed to load — preview unavailable');
+          showWarning('The clip audio could not be loaded, so Preview, sample zoom and Trim to Selection are off. Process, Copy and Simpler still work.');
+        } else if (!data.previewNotice) {
+          console.error('[clip-tool] audio data not yet available');
+        }
         return null;
       }
       const ctx = ensureAudioCtx();
@@ -528,6 +541,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // on the next call instead of disabling preview for the whole session.
       decodePromise = null;
       console.error('[clip-tool] audio decode failed:', err);
+      showWarning('The clip audio could not be decoded for preview, so Preview, sample zoom and Trim to Selection are off. Process, Copy and Simpler still work.');
       return null;
     });
     return decodePromise;

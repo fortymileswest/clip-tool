@@ -7,6 +7,8 @@ export interface WaveformData {
   sampleRate: number;
   channels: number;
   fileName: string;
+  /** Set when the clip is too large to preview; shown in the editor. */
+  previewNotice?: string;
 }
 
 const PEAK_COUNT = 2000;

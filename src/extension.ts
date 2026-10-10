@@ -11,6 +11,8 @@ import { loadAudioPeaks } from './audioLoader.js';
 import { processAudio } from './processor.js';
 import type { ProcessOptions } from './processor.js';
 import { nextOutputPath, uniqueNamedPath } from './projectPaths.js';
+import { buildMessageHtml, describeError, largeClipNotice, previewTooLarge } from './userMessages.js';
+import type { Stage } from './userMessages.js';
 
 // esbuild text loader — index.html is inlined as a string at build time
 import editorHtml from './webview/index.html';
@@ -38,7 +40,8 @@ interface ProcessResult {
 
 function buildModalHtml(
   waveformData: object,
-  audioDataSrc: string,
+  /** Script file holding the base64 audio, or null when the clip is too large to preview. */
+  audioDataSrc: string | null,
   waveformJs: string,
   controlsJs: string,
   timestretchJs: string,
@@ -68,7 +71,10 @@ function buildModalHtml(
       // onerror flags a failed subresource load so getDecodedBuffer can report it
       // instead of silently doing nothing (preview/deep-zoom would otherwise just
       // not respond if the temp .js failed to load).
-      `<script src="${audioDataSrc}" onerror="window.AUDIO_WAV_LOAD_FAILED=true"></script>\n<script>\n${timestretchJs}\n</script>`,
+      (audioDataSrc
+        ? `<script src="${audioDataSrc}" onerror="window.AUDIO_WAV_LOAD_FAILED=true"></script>\n`
+        : '')
+        + `<script>\n${timestretchJs}\n</script>`,
     )
     .replace('<script src="fades.js"></script>', `<script>\n${fadesJs}\n</script>`)
     .replace('<script src="editrange.js"></script>', `<script>\n${editRangeJs}\n</script>`)
@@ -92,7 +98,30 @@ export async function activate(activation: ActivationContext) {
 
   context.ui.registerContextMenuAction('AudioClip', 'Clip Tool', 'audioeditor.open');
 
-  async function handleAudioEdit(handle: Handle): Promise<void> {
+  // Show a failure in a small dialog of our own: the SDK has no alert or
+  // notification call, and a console message is invisible inside Live.
+  async function showMessage(title: string, message: string): Promise<void> {
+    const tempDir = context.environment.tempDirectory;
+    if (!tempDir) {
+      // No writable temp directory: fall back to a data: URL without the fonts.
+      await context.ui.showModalDialog(
+        `data:text/html,${encodeURIComponent(buildMessageHtml(title, message))}`, 460, 240);
+      return;
+    }
+    const htmlPath = path.join(tempDir, `clip-tool-message-${Date.now()}.html`);
+    await fs.writeFile(htmlPath, buildMessageHtml(title, message, fontsCss), 'utf-8');
+    try {
+      await context.ui.showModalDialog(pathToFileURL(htmlPath).href, 460, 240);
+    } finally {
+      fs.unlink(htmlPath).catch(() => {});
+    }
+  }
+
+  /** Tracks how far handleAudioEdit got, so a failure can say what failed. */
+  interface Progress { stage: Stage }
+
+  async function handleAudioEdit(handle: Handle, progress: Progress): Promise<void> {
+    progress.stage = 'render the clip';
     const clip = context.getObjectFromHandle(handle, AudioClip);
 
     const startTime = clip.startTime;
@@ -103,8 +132,7 @@ export async function activate(activation: ActivationContext) {
     // is not available — double-cast is the SDK-documented pattern.
     const parentObj = clip.parent;
     if (!parentObj) {
-      console.error('[Audio Editor] Clip has no parent track');
-      return;
+      throw new Error('The clip is not on an arrangement track.');
     }
     const track = parentObj as unknown as AudioTrack<'1.0.0'>;
 
@@ -122,6 +150,7 @@ export async function activate(activation: ActivationContext) {
       },
     )) as string;
 
+    progress.stage = 'open the editor';
     const waveformData = await loadAudioPeaks(renderedPath);
     // Show the original sample's name in the editor, not the temp render's.
     const displayPath = clip.filePath ?? renderedPath;
@@ -134,13 +163,22 @@ export async function activate(activation: ActivationContext) {
     // first, then the audio loads.
     const tempDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
     const stamp = Date.now();
-    const audioDataName = `audio-editor-data-${stamp}.js`;
-    const audioDataPath = path.join(tempDir, audioDataName);
-    const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
-    // base64's charset (A-Za-z0-9+/=) contains nothing that needs escaping in a
-    // double-quoted JS string, so concatenate directly rather than JSON.stringify
-    // the whole tens-of-MB payload (which would copy and scan it a second time).
-    await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
+    // A very long clip is too big to hand to the webview (one base64 string,
+    // then decoded to float): open it with the waveform outline only and say so.
+    const renderedBytes = (await fs.stat(renderedPath)).size;
+    let audioDataName: string | null = null;
+    let audioDataPath: string | null = null;
+    if (previewTooLarge(renderedBytes)) {
+      waveformData.previewNotice = largeClipNotice(renderedBytes);
+    } else {
+      audioDataName = `audio-editor-data-${stamp}.js`;
+      audioDataPath = path.join(tempDir, audioDataName);
+      const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
+      // base64's charset (A-Za-z0-9+/=) contains nothing that needs escaping in a
+      // double-quoted JS string, so concatenate directly rather than JSON.stringify
+      // the whole tens-of-MB payload (which would copy and scan it a second time).
+      await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
+    }
 
     const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, editRangeJs, fontsCss);
 
@@ -153,7 +191,7 @@ export async function activate(activation: ActivationContext) {
       resultStr = await context.ui.showModalDialog(pathToFileURL(htmlPath).href, 960, 620);
     } finally {
       fs.unlink(htmlPath).catch(() => {});
-      fs.unlink(audioDataPath).catch(() => {});
+      if (audioDataPath) fs.unlink(audioDataPath).catch(() => {});
     }
 
     let result: ProcessResult;
@@ -165,6 +203,7 @@ export async function activate(activation: ActivationContext) {
     }
 
     if (result.cancelled) return;
+    progress.stage = 'process the audio';
 
     await context.ui.withinProgressDialog('Clip Tool', { progress: 0 }, async (update) => {
       await update('Processing audio…', 10);
@@ -216,11 +255,13 @@ export async function activate(activation: ActivationContext) {
       });
 
       await update('Importing into project…', 70);
+      progress.stage = 'import the result into your project';
 
       // Live's importIntoProject writes the file into the project's
       // Samples/Imported/ folder and returns its final path. The original sample
       // is never written to; every edit is a brand-new file.
       const finalPath = await context.resources.importIntoProject(outputPath);
+      progress.stage = 'add the result to your set';
 
       // Simpler: drop the processed sample onto a Simpler on a new MIDI track.
       if (result.mode === 'simpler') {
@@ -266,6 +307,15 @@ export async function activate(activation: ActivationContext) {
   }
 
   context.commands.registerCommand('audioeditor.open', (arg: unknown) => {
-    handleAudioEdit(arg as Handle).catch((e) => console.error('[Audio Editor]', e));
+    const progress: Progress = { stage: 'render the clip' };
+    handleAudioEdit(arg as Handle, progress).catch(async (e) => {
+      console.error('[Audio Editor]', e);
+      const { title, message } = describeError(progress.stage, e);
+      try {
+        await showMessage(title, message);
+      } catch (dialogErr) {
+        console.error('[Audio Editor] could not show the error dialog', dialogErr);
+      }
+    });
   });
 }
