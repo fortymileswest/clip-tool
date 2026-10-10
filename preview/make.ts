@@ -70,7 +70,7 @@ const sampleRate = 44100;
 const wavPath = path.join(outDir, 'demo-break.wav');
 await encodeWavFile(wavPath, drumLoop(sampleRate, 120, 2), sampleRate);
 const data = await loadAudioPeaks(wavPath);
-data.fileName = 'Demo Break 120.wav';
+data.fileName = 'Break 120.wav';
 
 const b64 = (await fs.readFile(wavPath)).toString('base64');
 await fs.writeFile(path.join(outDir, 'audio-data.js'), `window.AUDIO_WAV_B64="${b64}";`);

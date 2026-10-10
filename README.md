@@ -5,7 +5,14 @@
 > mono or fire it into a Simpler — and see and hear every change on the waveform
 > before you commit it, without ever leaving Live.
 
-Made by [Danny Wincott](https://github.com/fortymileswest)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/kerf-audio-horizontal-on-dark.svg">
+  <img src="docs/brand/kerf-audio-horizontal-on-light.svg" alt="Kerf Audio" height="36">
+</picture>
+
+Clip Tool is made by **Kerf Audio**, the audio tools label of
+[Danny Wincott](https://github.com/fortymileswest), and shares the dark,
+hardware-style look of the rest of the Kerf range.
 
 [![Downloads](https://img.shields.io/github/downloads/fortymileswest/clip-tool/total)](https://github.com/fortymileswest/clip-tool/releases)
 [![Latest release](https://img.shields.io/github/v/release/fortymileswest/clip-tool)](https://github.com/fortymileswest/clip-tool/releases/latest)
@@ -157,7 +164,9 @@ The original sample is left alone. The result lands in
   progress bar climbs steadily through the render, so a moving bar (even a slow
   one) means it's working, not stuck. Larger pitch shifts take the longest.
 
-Tempo, pitch and time-stretch controls sit along the top, with the detected
+The header shows the filename and a readout of the detected key, sample rate,
+channels and length. Tempo, pitch and time-stretch controls sit just below it,
+with the detected
 tempo, Bars and Beats, pitch and grain settings, and the target BPM:
 
 ![Tempo, pitch and time-stretch controls](docs/screenshots/controls.png)
