@@ -13,6 +13,7 @@ import type { ProcessOptions } from './processor.js';
 import { nextOutputPath, uniqueNamedPath } from './projectPaths.js';
 import { buildMessageHtml, describeError, largeClipNotice, previewTooLarge } from './userMessages.js';
 import type { Stage } from './userMessages.js';
+import { removeTempFile } from './tempFiles.js';
 
 // esbuild text loader — index.html is inlined as a string at build time
 import editorHtml from './webview/index.html';
@@ -150,160 +151,176 @@ export async function activate(activation: ActivationContext) {
       },
     )) as string;
 
-    progress.stage = 'open the editor';
-    const waveformData = await loadAudioPeaks(renderedPath);
-    // Show the original sample's name in the editor, not the temp render's.
-    const displayPath = clip.filePath ?? renderedPath;
-    waveformData.fileName = path.basename(displayPath);
-
-    // Deliver the rendered audio for Web Audio preview as a SEPARATE script file
-    // beside the HTML, not inlined. A long clip is tens of MB of base64; inlined
-    // ahead of the UI markup it blocked the webview parser so the modal opened
-    // blank until a restart (issue #1). As an external subresource the UI paints
-    // first, then the audio loads.
-    const tempDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
-    const stamp = Date.now();
-    // A very long clip is too big to hand to the webview (one base64 string,
-    // then decoded to float): open it with the waveform outline only and say so.
-    const renderedBytes = (await fs.stat(renderedPath)).size;
-    let audioDataName: string | null = null;
-    let audioDataPath: string | null = null;
-    if (previewTooLarge(renderedBytes)) {
-      waveformData.previewNotice = largeClipNotice(renderedBytes);
-    } else {
-      audioDataName = `audio-editor-data-${stamp}.js`;
-      audioDataPath = path.join(tempDir, audioDataName);
-      const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
-      // base64's charset (A-Za-z0-9+/=) contains nothing that needs escaping in a
-      // double-quoted JS string, so concatenate directly rather than JSON.stringify
-      // the whole tens-of-MB payload (which would copy and scan it a second time).
-      await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
-    }
-
-    const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, editRangeJs, fontsCss);
-
-    // Serve from a file: URL — the audio subresource sits in the same directory.
-    const htmlPath = path.join(tempDir, `audio-editor-ui-${stamp}.html`);
-    await fs.writeFile(htmlPath, html, 'utf-8');
-
-    let resultStr: string;
+    // Everything after the render runs in try/finally so the rendered WAV in
+    // the temp directory is always deleted: on cancel, on failure, and once
+    // the result has been imported (Live works from its own copy).
     try {
-      resultStr = await context.ui.showModalDialog(pathToFileURL(htmlPath).href, 960, 620);
-    } finally {
-      fs.unlink(htmlPath).catch(() => {});
-      if (audioDataPath) fs.unlink(audioDataPath).catch(() => {});
-    }
+      progress.stage = 'open the editor';
+      const waveformData = await loadAudioPeaks(renderedPath);
+      // Show the original sample's name in the editor, not the temp render's.
+      const displayPath = clip.filePath ?? renderedPath;
+      waveformData.fileName = path.basename(displayPath);
 
-    let result: ProcessResult;
-    try {
-      result = JSON.parse(resultStr) as ProcessResult;
-    } catch {
-      // Modal was dismissed without posting a result (e.g. OS-level close) — treat as cancel.
-      return;
-    }
+      // Deliver the rendered audio for Web Audio preview as a SEPARATE script file
+      // beside the HTML, not inlined. A long clip is tens of MB of base64; inlined
+      // ahead of the UI markup it blocked the webview parser so the modal opened
+      // blank until a restart (issue #1). As an external subresource the UI paints
+      // first, then the audio loads.
+      const tempDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
+      const stamp = Date.now();
+      // A very long clip is too big to hand to the webview (one base64 string,
+      // then decoded to float): open it with the waveform outline only and say so.
+      const renderedBytes = (await fs.stat(renderedPath)).size;
+      let audioDataName: string | null = null;
+      let audioDataPath: string | null = null;
+      if (previewTooLarge(renderedBytes)) {
+        waveformData.previewNotice = largeClipNotice(renderedBytes);
+      } else {
+        audioDataName = `audio-editor-data-${stamp}.js`;
+        audioDataPath = path.join(tempDir, audioDataName);
+        const audioB64 = (await fs.readFile(renderedPath)).toString('base64');
+        // base64's charset (A-Za-z0-9+/=) contains nothing that needs escaping in a
+        // double-quoted JS string, so concatenate directly rather than JSON.stringify
+        // the whole tens-of-MB payload (which would copy and scan it a second time).
+        await fs.writeFile(audioDataPath, `window.AUDIO_WAV_B64="${audioB64}";`, 'utf-8');
+      }
 
-    if (result.cancelled) return;
-    progress.stage = 'process the audio';
+      const html = buildModalHtml(waveformData, audioDataName, waveformJs, controlsJs, timestretchJs, fadesJs, editRangeJs, fontsCss);
 
-    await context.ui.withinProgressDialog('Clip Tool', { progress: 0 }, async (update) => {
-      await update('Processing audio…', 10);
+      // Serve from a file: URL — the audio subresource sits in the same directory.
+      const htmlPath = path.join(tempDir, `audio-editor-ui-${stamp}.html`);
+      await fs.writeFile(htmlPath, html, 'utf-8');
 
-      // Write into the sandbox-writable temp directory; importIntoProject then
-      // copies the result into the Live project where Live manages it.
-      const outputDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
-      // A rename uses the exact name; otherwise the original stem + _edited_NNN.
-      const customName = result.outputName
-        ? result.outputName.replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_').trim()
-        : '';
-      const stem = path.basename(displayPath, path.extname(displayPath));
-      const pickOutputPath = (dir: string) =>
-        customName ? uniqueNamedPath(dir, customName) : nextOutputPath(dir, stem);
-      const outputPath = await pickOutputPath(outputDir);
+      let resultStr: string;
+      try {
+        resultStr = await context.ui.showModalDialog(pathToFileURL(htmlPath).href, 960, 620);
+      } finally {
+        fs.unlink(htmlPath).catch(() => {});
+        if (audioDataPath) fs.unlink(audioDataPath).catch(() => {});
+      }
 
-      const opts: ProcessOptions = {
-        inputPath: renderedPath,
-        outputPath,
-        gain_dB: result.gain_dB,
-        channel: result.channel,
-        crop: result.crop,
-        trimStart: result.trimStart,
-        trimEnd: result.trimEnd,
-        stretchRatio: result.stretchRatio,
-        stretchCyclic: result.stretchCyclic,
-        fadeIn: result.fadeIn,
-        fadeOut: result.fadeOut,
-        removeDc: result.removeDc,
-        // Default the guard on when the field is absent (older UI / safety).
-        preventClipping: result.preventClipping ?? true,
-        pitchSemitones: result.pitchSemitones,
-        stretchWindowMs: result.stretchWindowMs,
-        stretchTransient: result.stretchTransient,
-      };
-
-      let lastUpdateTime = Date.now();
-      let lastReportedProgress = 0;
-      await processAudio(opts, (progress) => {
-        const now = Date.now();
-        // Only update if progress jumped significantly or 100ms passed
-        if (progress - lastReportedProgress > 0.05 || now - lastUpdateTime >= 100) {
-          lastUpdateTime = now;
-          lastReportedProgress = progress;
-          const pct = Math.round(10 + progress * 60);
-          // Fire update without blocking — let Ableton queue it
-          void update(`Processing audio… ${pct}%`, pct);
-        }
-      });
-
-      await update('Importing into project…', 70);
-      progress.stage = 'import the result into your project';
-
-      // Live's importIntoProject writes the file into the project's
-      // Samples/Imported/ folder and returns its final path. The original sample
-      // is never written to; every edit is a brand-new file.
-      const finalPath = await context.resources.importIntoProject(outputPath);
-      progress.stage = 'add the result to your set';
-
-      // Simpler: drop the processed sample onto a Simpler on a new MIDI track.
-      if (result.mode === 'simpler') {
-        await update('Creating Simpler track…', 85);
-        const song = context.application.song;
-        const newTrack = await song.createMidiTrack();
-        const device = await newTrack.insertDevice('Simpler', 0);
-        const simpler = device as unknown as Simpler<'1.0.0'>;
-        await simpler.replaceSample(finalPath);
-        // Name the track after the sample for clarity.
-        newTrack.name = path.basename(finalPath, path.extname(finalPath));
-        await update('Done', 100);
+      let result: ProcessResult;
+      try {
+        result = JSON.parse(resultStr) as ProcessResult;
+      } catch {
+        // Modal was dismissed without posting a result (e.g. OS-level close) — treat as cancel.
         return;
       }
 
-      const isCopy = result.mode === 'copy';
-      await update(isCopy ? 'Adding copy to arrangement…' : 'Replacing clip…', 85);
+      if (result.cancelled) return;
+      progress.stage = 'process the audio';
 
-      // renderPreFxAudio already printed the source clip's *warped playback* to a
-      // plain WAV at the project tempo — any warp is baked in and the audio is 1:1
-      // with arrangement time. So the replacement must be imported UNWARPED. Passing
-      // the source clip's `warping` here (true for a warped clip) makes Live Auto-Warp
-      // the already-printed file against a guessed tempo, double-warping it — the cause
-      // of the "tempo messed up" and stutter/jitter reports (issue #1).
-      //
-      // `duration` is omitted so Live uses the processed file's natural length at the
-      // current tempo. That exactly matches the rendered material — including any crop
-      // or stretch we applied — without assuming the original clip played the whole file.
-      const promises = context.withinTransaction(() => {
-        const clearP = isCopy ? null : track.clearClipsInRange(startTime, endTime);
-        const createP = track.createAudioClip({
-          filePath: finalPath,
-          // Copy lands immediately after the original clip on the same track.
-          startTime: isCopy ? endTime : startTime,
-          isWarped: false,
+      await context.ui.withinProgressDialog('Clip Tool', { progress: 0 }, async (update) => {
+        await update('Processing audio…', 10);
+
+        // Write into the sandbox-writable temp directory; importIntoProject then
+        // copies the result into the Live project where Live manages it.
+        const outputDir = context.environment.tempDirectory ?? path.dirname(renderedPath);
+        // A rename uses the exact name; otherwise the original stem + _edited_NNN.
+        const customName = result.outputName
+          ? result.outputName.replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_').trim()
+          : '';
+        const stem = path.basename(displayPath, path.extname(displayPath));
+        const pickOutputPath = (dir: string) =>
+          customName ? uniqueNamedPath(dir, customName) : nextOutputPath(dir, stem);
+        const outputPath = await pickOutputPath(outputDir);
+
+        const opts: ProcessOptions = {
+          inputPath: renderedPath,
+          outputPath,
+          gain_dB: result.gain_dB,
+          channel: result.channel,
+          crop: result.crop,
+          trimStart: result.trimStart,
+          trimEnd: result.trimEnd,
+          stretchRatio: result.stretchRatio,
+          stretchCyclic: result.stretchCyclic,
+          fadeIn: result.fadeIn,
+          fadeOut: result.fadeOut,
+          removeDc: result.removeDc,
+          // Default the guard on when the field is absent (older UI / safety).
+          preventClipping: result.preventClipping ?? true,
+          pitchSemitones: result.pitchSemitones,
+          stretchWindowMs: result.stretchWindowMs,
+          stretchTransient: result.stretchTransient,
+        };
+
+        // The output (or, if processing fails, the empty placeholder reserved for
+        // it) is a temp file: importIntoProject copies it into the project and
+        // Live uses that copy, so it is deleted once the import has finished.
+        let importedPath: string | undefined;
+        try {
+          let lastUpdateTime = Date.now();
+          let lastReportedProgress = 0;
+          await processAudio(opts, (done) => {
+            const now = Date.now();
+            // Only update if progress jumped significantly or 100ms passed
+            if (done - lastReportedProgress > 0.05 || now - lastUpdateTime >= 100) {
+              lastUpdateTime = now;
+              lastReportedProgress = done;
+              const pct = Math.round(10 + done * 60);
+              // Fire update without blocking — let Ableton queue it
+              void update(`Processing audio… ${pct}%`, pct);
+            }
+          });
+
+          await update('Importing into project…', 70);
+          progress.stage = 'import the result into your project';
+
+          // Live's importIntoProject copies the file into the project's
+          // Samples/Imported/ folder and returns the copy's path. The original
+          // sample is never written to; every edit is a brand-new file.
+          importedPath = await context.resources.importIntoProject(outputPath);
+        } finally {
+          await removeTempFile(outputPath, importedPath);
+        }
+        const finalPath = importedPath;
+        progress.stage = 'add the result to your set';
+
+        // Simpler: drop the processed sample onto a Simpler on a new MIDI track.
+        if (result.mode === 'simpler') {
+          await update('Creating Simpler track…', 85);
+          const song = context.application.song;
+          const newTrack = await song.createMidiTrack();
+          const device = await newTrack.insertDevice('Simpler', 0);
+          const simpler = device as unknown as Simpler<'1.0.0'>;
+          await simpler.replaceSample(finalPath);
+          // Name the track after the sample for clarity.
+          newTrack.name = path.basename(finalPath, path.extname(finalPath));
+          await update('Done', 100);
+          return;
+        }
+
+        const isCopy = result.mode === 'copy';
+        await update(isCopy ? 'Adding copy to arrangement…' : 'Replacing clip…', 85);
+
+        // renderPreFxAudio already printed the source clip's *warped playback* to a
+        // plain WAV at the project tempo — any warp is baked in and the audio is 1:1
+        // with arrangement time. So the replacement must be imported UNWARPED. Passing
+        // the source clip's `warping` here (true for a warped clip) makes Live Auto-Warp
+        // the already-printed file against a guessed tempo, double-warping it — the cause
+        // of the "tempo messed up" and stutter/jitter reports (issue #1).
+        //
+        // `duration` is omitted so Live uses the processed file's natural length at the
+        // current tempo. That exactly matches the rendered material — including any crop
+        // or stretch we applied — without assuming the original clip played the whole file.
+        const promises = context.withinTransaction(() => {
+          const clearP = isCopy ? null : track.clearClipsInRange(startTime, endTime);
+          const createP = track.createAudioClip({
+            filePath: finalPath,
+            // Copy lands immediately after the original clip on the same track.
+            startTime: isCopy ? endTime : startTime,
+            isWarped: false,
+          });
+          return [clearP, createP] as const;
         });
-        return [clearP, createP] as const;
-      });
-      await Promise.all(promises.filter((p): p is NonNullable<typeof p> => p !== null));
+        await Promise.all(promises.filter((p): p is NonNullable<typeof p> => p !== null));
 
-      await update('Done', 100);
-    });
+        await update('Done', 100);
+      });
+    } finally {
+      await removeTempFile(renderedPath);
+    }
   }
 
   context.commands.registerCommand('audioeditor.open', (arg: unknown) => {
