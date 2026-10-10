@@ -14,14 +14,14 @@
     "test": "node --import tsx/esm --test tests/**/*.test.ts"
   },
   "devDependencies": {
-    "@ableton-extensions/cli": "file:vendor/ableton-extensions-cli-1.0.0-beta.0.tgz",
+    "@ableton-extensions/cli": "file:vendor/ableton-extensions-cli-1.0.0-beta.1.tgz",
     "@types/node": "^25.2.3",
     "esbuild": "0.28.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@ableton-extensions/sdk": "file:vendor/ableton-extensions-sdk-1.0.0-beta.0.tgz",
+    "@ableton-extensions/sdk": "file:vendor/ableton-extensions-sdk-1.0.0-beta.1.tgz",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
     "@fontsource/michroma": "^5.3.0"

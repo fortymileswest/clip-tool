@@ -7,8 +7,8 @@ on npm and can't be redistributed here, so you supply your own copy.
 Drop these two files from the SDK package into this folder:
 
 ```
-vendor/ableton-extensions-sdk-1.0.0-beta.0.tgz
-vendor/ableton-extensions-cli-1.0.0-beta.0.tgz
+vendor/ableton-extensions-sdk-1.0.0-beta.1.tgz
+vendor/ableton-extensions-cli-1.0.0-beta.1.tgz
 ```
 
 Then run `npm install` from the project root. The `.tgz` files are gitignored,
