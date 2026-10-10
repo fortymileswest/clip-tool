@@ -60,7 +60,8 @@ turning a rough chop into something playable without leaving Live.
   (right-click), with draggable length and a mid-curve bend handle.
 - A **Loop** region with its own handles and an on/off toggle. While Loop is on,
   the loop region is what plays, what the fades sit on and what gets rendered,
-  as a seamless cycle.
+  as a seamless cycle. **Clear** (or `Delete`) removes the loop, then the
+  selection, to get back to the whole clip.
 - A pitch-preserving, loop-seamless **time-stretch** to a target BPM, from a
   quarter to four times the length (the Stretch button shows MIN or MAX when the
   target BPM asks for more).
@@ -90,7 +91,9 @@ Each output renders what Preview plays: the selection (or the loop region while
 Loop is on). To render the whole clip, right-click and **Clear selection** first.
 
 - **Process** replaces the clip in place. A cropped result stays where that audio
-  sat in the arrangement.
+  sat in the arrangement. A stretch that would run into the next clip keeps the
+  original clip's size, with the rest of the audio kept as a tail you can drag
+  out; with free space after it, the whole result is shown.
 - **Copy to Arrangement** drops a new clip just after the original.
 - **→ Simpler** builds a new MIDI track with a Simpler loaded and ready to play.
 - **Rename** the rendered sample by right-clicking the filename.
@@ -120,6 +123,7 @@ Keyboard:
 | `Space` | Play / stop the preview |
 | `←` | Jump to the start of the selection |
 | `→` | Jump to the end of the selection |
+| `Delete` / `Backspace` | Clear the loop, or the selection when there is no loop (same as **Clear**) |
 | `Esc` | Close the editor |
 | `Enter` | Commit an inline rename (while editing the filename) |
 

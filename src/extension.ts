@@ -14,6 +14,8 @@ import { nextOutputPath, sanitizeOutputName, uniqueNamedPath } from './projectPa
 import { buildMessageHtml, describeError, largeClipNotice, previewTooLarge } from './userMessages.js';
 import type { Stage } from './userMessages.js';
 import { removeTempFile } from './tempFiles.js';
+import { clipDuration } from './placement.js';
+import type { Span } from './placement.js';
 
 // esbuild text loader — index.html is inlined as a string at build time
 import editorHtml from './webview/index.html';
@@ -261,10 +263,11 @@ export async function activate(activation: ActivationContext) {
           // it) is a temp file: importIntoProject copies it into the project and
           // Live uses that copy, so it is deleted once the import has finished.
           let importedPath: string | undefined;
+          let rendered = { frames: 0, sampleRate: 1 };
           try {
             let lastUpdateTime = Date.now();
             let lastReportedProgress = 0;
-            await processAudio(opts, (done) => {
+            rendered = await processAudio(opts, (done) => {
               const now = Date.now();
               // Only update if progress jumped significantly or 100ms passed
               if (done - lastReportedProgress > 0.05 || now - lastUpdateTime >= 100) {
@@ -315,9 +318,10 @@ export async function activate(activation: ActivationContext) {
           // the already-printed file against a guessed tempo, double-warping it — the cause
           // of the "tempo messed up" and stutter/jitter reports (issue #1).
           //
-          // `duration` is omitted so Live uses the processed file's natural length at the
-          // current tempo. That exactly matches the rendered material — including any crop
-          // or stretch we applied — without assuming the original clip played the whole file.
+          // The clip shows the processed file's natural length at the current tempo when
+          // it fits before the next clip on the track. A longer result (a stretch) that
+          // would run into a neighbour keeps the original clip's size instead, with the
+          // rest left in the file as a tail (see placement.ts).
           //
           // A cropped replacement stays where its audio was: the render is 1:1 with
           // arrangement time at the song tempo, so the crop's start in seconds maps
@@ -326,12 +330,30 @@ export async function activate(activation: ActivationContext) {
           const cropOffsetBeats = result.crop && result.trimStart > 0
             ? (result.trimStart * context.application.song.tempo) / 60
             : 0;
+          const tempo = context.application.song.tempo;
+          const newStart = isCopy ? endTime : startTime + cropOffsetBeats;
+          // Neighbours after the edit. A replace clears startTime..endTime first,
+          // which truncates a clip overlapping its end, so only the remainder counts.
+          const others: Span[] = [];
+          for (const c of track.arrangementClips) {
+            const s = c.startTime, e = c.endTime;
+            if (isCopy || e <= startTime || s >= endTime) others.push({ start: s, end: e });
+            else if (e > endTime) others.push({ start: endTime, end: e });
+          }
+          const duration = clipDuration({
+            start: newStart,
+            naturalLength: (rendered.frames / rendered.sampleRate) * (tempo / 60),
+            // The original clip's size: a copy repeats it, a replace keeps its slot.
+            keepLength: isCopy ? endTime - startTime : endTime - newStart,
+            others,
+          });
           const promises = context.withinTransaction(() => {
             const clearP = isCopy ? null : track.clearClipsInRange(startTime, endTime);
             const createP = track.createAudioClip({
               filePath: finalPath,
               // Copy lands immediately after the original clip on the same track.
-              startTime: isCopy ? endTime : startTime + cropOffsetBeats,
+              startTime: newStart,
+              duration,
               isWarped: false,
             });
             return [clearP, createP] as const;

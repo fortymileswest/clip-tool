@@ -462,7 +462,14 @@
       flex-shrink: 0;
     }
     .btn { --tile-h: 28px; padding: 0 12px; }
-    #btn-loop { margin-right: auto; }
+    /* Transport and range (Preview, Loop, Clear) on the left, edits and outputs right. */
+    #btn-clear { margin-right: auto; }
+    /* Live's dialog is 960 px wide: tighten the action row so it fits on one line. */
+    @media (max-width: 1000px) {
+      #actions { gap: 5px; padding-left: 8px; padding-right: 8px; }
+      #actions .btn { padding: 0 8px; letter-spacing: 0.04em; }
+      #btn-process { padding: 0 12px; }
+    }
     /* Process: the one lit action. */
     #btn-process {
       background: var(--accent);
@@ -724,6 +731,7 @@
   <div id="actions">
     <button class="btn" id="btn-preview">▶ Preview</button>
     <button class="btn" id="btn-loop">Loop: OFF</button>
+    <button class="btn" id="btn-clear" title="Clear the loop, or the selection when there is no loop (Delete)">Clear</button>
     <button class="btn" id="btn-trim">Trim to Selection</button>
     <button class="btn" id="btn-zc" title="Snap start/end points to zero crossings">ZC</button>
     <button class="btn" id="btn-dc" title="Remove DC offset (applied on Process / Copy)">DC</button>

@@ -777,14 +777,47 @@ document.addEventListener('DOMContentLoaded', () => {
     hideCtxMenu();
   });
 
-  ctxClearSel.addEventListener('click', () => {
-    stopPreview();
-    // Reset the selection to span the whole current view.
+  // Reset the selection to span the whole current view.
+  function clearSelection() {
     waveform.trimStart = 0;
     waveform.trimEnd = waveform.data.duration;
     waveform.draw();
     waveform._updateTrimInfo();
+    updateStretchUi(); // a manual BPM follows the range length
+  }
+
+  ctxClearSel.addEventListener('click', () => {
+    stopPreview();
+    clearSelection();
     hideCtxMenu();
+  });
+
+  // Clear button and Delete/Backspace: remove the loop if there is one,
+  // otherwise the selection, so two presses get back to the whole clip.
+  function clearLoopOrSelection() {
+    if (!waveform.data) return;
+    const wasPlaying = !!previewSrc || previewPending;
+    stopPreview();
+    if (waveform.hasLoop) {
+      waveform.clearLoop();
+      setLoopEnabled(false);
+      updateStretchUi();
+    } else {
+      clearSelection();
+    }
+    if (wasPlaying) startPreview().catch((e) => console.error('[Audio Editor] preview', e));
+  }
+  document.getElementById('btn-clear').addEventListener('click', (e) => {
+    e.currentTarget.blur();
+    clearLoopOrSelection();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Delete' && e.key !== 'Backspace') return;
+    // Leave editing keys alone in number fields and the filename rename.
+    const t = e.target;
+    if (t instanceof HTMLElement && (t.tagName === 'INPUT' || t.isContentEditable)) return;
+    e.preventDefault();
+    clearLoopOrSelection();
   });
 
   // Decode the embedded audio up front: preview starts instantly and the

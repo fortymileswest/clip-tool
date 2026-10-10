@@ -55,7 +55,7 @@ export async function processAudio(
   onProgress?: (progress: number) => void,
   /** Cancels between progress ticks; processAudio then rejects with ProcessCancelled. */
   signal?: AbortSignal,
-): Promise<void> {
+): Promise<{ frames: number; sampleRate: number }> {
   // The editor already clamps the ratio and shows it; clamp here too so no
   // caller can ask for an unbounded stretch.
   if (opts.stretchRatio !== undefined) {
@@ -114,4 +114,5 @@ export async function processAudio(
 
   checkCancel();
   await encodeWavFile(opts.outputPath, processed, decoded.sampleRate, stage(stretchEnd, 1));
+  return { frames: processed[0]?.length ?? 0, sampleRate: decoded.sampleRate };
 }
