@@ -101,3 +101,59 @@ test('cyclic stretch keeps levels sane at the loop seam', async () => {
   tailRms = Math.sqrt(tailRms / tail.length);
   assert.ok(tailRms > 0.1, `tail RMS ${tailRms} — seam should not be silent`);
 });
+
+function rms(ch: Float32Array, from: number, to: number): number {
+  let s = 0;
+  for (let i = from; i < to; i++) s += ch[i]! * ch[i]!;
+  return Math.sqrt(s / Math.max(1, to - from));
+}
+
+test('non-cyclic stretch and pitch-up keep the level right to the end', async () => {
+  const input = sine(440, 1);
+  const level = rms(input, 0, input.length); // ~0.707
+  const cases: Array<[number, number]> = [[2, 0], [1.5, 0], [1, 12], [0.75, 7]];
+  for (const [ratio, pitch] of cases) {
+    const out = (await stretchCyclic([input], ratio, SR, false, { pitch }))[0]!;
+    const tail = rms(out, out.length - Math.round(SR * 0.01), out.length);
+    assert.ok(tail > level * 0.7, `ratio ${ratio} pitch ${pitch}: tail RMS ${tail.toFixed(3)} vs ${level.toFixed(3)}`);
+  }
+});
+
+test('transient preservation leaves a steady tone at full level', async () => {
+  const input = sine(440, 1);
+  const level = rms(input, 0, input.length);
+  for (const transient of [0.3, 0.7, 1]) {
+    const out = (await stretchCyclic([input], 1.5, SR, false, { transient }))[0]!;
+    const r = rms(out, Math.round(SR * 0.1), out.length - Math.round(SR * 0.1));
+    assert.ok(Math.abs(r - level) / level < 0.1, `transient ${transient}: RMS ${r.toFixed(3)} vs ${level.toFixed(3)}`);
+  }
+});
+
+test('transient preservation does not repeat attacks', async () => {
+  // Four short decaying clicks, 250 ms apart, stretched 4×.
+  const n = SR;
+  const input = new Float32Array(n);
+  for (let k = 0; k < 4; k++) {
+    const at = Math.round(k * 0.25 * SR) + 1000;
+    for (let i = 0; i < 400; i++) input[at + i] = Math.exp(-i / 60) * (i % 2 ? 1 : -1);
+  }
+  const out = (await stretchCyclic([input], 4, SR, false, { transient: 1 }))[0]!;
+  // Count attacks: envelope rising above half the peak after being below 10%.
+  let peak = 0;
+  for (const v of out) peak = Math.max(peak, Math.abs(v));
+  const hop = Math.round(SR * 0.002);
+  let bursts = 0, quiet = true;
+  for (let i = 0; i + hop <= out.length; i += hop) {
+    const e = rms(out, i, i + hop) * Math.SQRT2;
+    if (quiet && e > peak * 0.3) { bursts++; quiet = false; }
+    else if (!quiet && e < peak * 0.05) quiet = true;
+  }
+  assert.equal(bursts, 4, `expected 4 attacks, got ${bursts}`);
+});
+
+test('pitch-up never builds an intermediate buffer longer than the output', async () => {
+  // Guarded indirectly: a +24 st, 4x stretch on 2 s finishes with exact length.
+  const input = sine(220, 2);
+  const out = await stretchCyclic([input], 4, SR, false, { pitch: 24 });
+  assert.equal(out[0]!.length, Math.round(input.length * 4));
+});

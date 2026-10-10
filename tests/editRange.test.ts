@@ -37,12 +37,16 @@ test('a view shortened from the end only still counts as trimmed', () => {
   assert.equal(hasTrimmedView({ viewOffset: 1e-9, currentDuration: 10, originalDuration: 10 }), false);
 });
 
+test('a dragged selection alone crops, so the render matches the preview', () => {
+  assert.deepEqual(renderRange({ ...base, trimStart: 1, trimEnd: 5 }), { crop: true, trimStart: 1, trimEnd: 5 });
+  assert.equal(renderRange({ ...base, trimStart: 0, trimEnd: 9.5 }).crop, true);
+});
+
 test('every mode gets the same range for the same state', () => {
-  // Process, Copy and Simpler all call renderRange with the same state; the
-  // old Copy/Simpler paths ignored fades. Guard the fade case explicitly.
+  // Process, Copy and Simpler all call renderRange with the same state.
   for (const hasFades of [false, true]) {
     for (const hasExplicitSelection of [false, true]) {
-      const r = renderRange({ ...base, hasFades, hasExplicitSelection, trimStart: 1, trimEnd: 5 });
+      const r = renderRange({ ...base, hasFades, hasExplicitSelection });
       assert.equal(r.crop, hasFades || hasExplicitSelection);
     }
   }

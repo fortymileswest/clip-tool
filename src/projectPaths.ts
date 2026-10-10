@@ -1,12 +1,20 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
 
-export function getProcessedDir(songFilePath: string): string {
-  return path.join(path.dirname(songFilePath), 'Samples', 'Processed');
-}
+// Device names Windows reserves in any folder, with or without an extension.
+const WINDOWS_RESERVED = /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³])$/i;
 
-export async function ensureDir(dirPath: string): Promise<void> {
-  await fs.mkdir(dirPath, { recursive: true });
+/**
+ * Makes a user-typed sample name safe as a file stem on macOS and Windows:
+ * characters either system forbids become '_', trailing dots and spaces (which
+ * Windows drops) are removed, a reserved device name gets a '_' suffix, and the
+ * stem is capped well below path limits. Returns '' when nothing usable is left.
+ */
+export function sanitizeOutputName(name: string): string {
+  let s = name.replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim().replace(/[. ]+$/, '');
+  if (s.length > 120) s = s.slice(0, 120).replace(/[. ]+$/, '');
+  if (WINDOWS_RESERVED.test(s)) s += '_';
+  return s;
 }
 
 export async function nextOutputPath(dir: string, stem: string): Promise<string> {

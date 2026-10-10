@@ -65,4 +65,14 @@ await esbuild.build({
   outfile: 'dist/webview/editrange.js',
 });
 
+// Trim, channel, DC, gain and fades, shared so the preview runs the render's
+// own code, plus the waveform peak builder.
+await esbuild.build({
+  entryPoints: ['src/dsp.ts'],
+  bundle: true,
+  format: 'iife',
+  globalName: 'Dsp',
+  outfile: 'dist/webview/dsp.js',
+});
+
 console.log('Build complete → dist/extension.cjs');

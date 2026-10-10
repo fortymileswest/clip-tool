@@ -1,5 +1,6 @@
 import * as path from 'node:path';
 import { decodeWav } from './wavDecoder.js';
+import { computePeaks } from './dsp.js';
 
 export interface WaveformData {
   peaks: number[][];
@@ -16,26 +17,9 @@ const PEAK_COUNT = 2000;
 export async function loadAudioPeaks(filePath: string): Promise<WaveformData> {
   const decoded = await decodeWav(filePath);
 
-  const peaks: number[][] = [];
-  for (let c = 0; c < decoded.numberOfChannels; c++) {
-    const channelData = decoded.getChannelData(c);
-    const blockSize = Math.max(1, Math.floor(channelData.length / PEAK_COUNT));
-    const channelPeaks: number[] = [];
-
-    for (let i = 0; i < PEAK_COUNT; i++) {
-      const start = i * blockSize;
-      const end = Math.min(start + blockSize, channelData.length);
-      let min = 0;
-      let max = 0;
-      for (let j = start; j < end; j++) {
-        const v = channelData[j]!;
-        if (v < min) min = v;
-        if (v > max) max = v;
-      }
-      channelPeaks.push(min, max);
-    }
-    peaks.push(channelPeaks);
-  }
+  const channels: Float32Array[] = [];
+  for (let c = 0; c < decoded.numberOfChannels; c++) channels.push(decoded.getChannelData(c));
+  const peaks = computePeaks(channels, PEAK_COUNT);
 
   return {
     peaks,

@@ -12,11 +12,7 @@ function closeWithResult(result) {
   sendToExtension({ method: 'close_and_send', params: [JSON.stringify(result)] });
 }
 
-function fmtTime(s) {
-  const m = Math.floor(s / 60);
-  const sec = (s % 60).toFixed(3);
-  return `${m}:${sec.padStart(6, '0')}`;
-}
+// fmtTime comes from waveform.js, which loads first.
 
 // In-place iterative radix-2 FFT.
 function fft(re, im) {
@@ -114,15 +110,22 @@ function detectKey(channels, sampleRate) {
 // median f0 becomes a note name with octave (e.g. "F2"). Works on monophonic
 // material (bass lines, single hits); on chords it locks to the strongest
 // periodicity. Returns null when nothing is reliably periodic.
+// The lagged products come from one FFT per frame (autocorrelation via the
+// power spectrum) and the energy terms from a running sum, instead of a
+// frame × lags loop.
 function detectPitch(channels, sampleRate) {
   const L = channels[0];
   const R = channels[1];
   const frame = 2048;
   const hop = 4096;
+  const N = frame * 2; // zero-padded so the circular correlation is linear
   const minLag = Math.floor(sampleRate / 1000); // 1 kHz ceiling
   const maxLag = Math.floor(sampleRate / 50);   // 50 Hz floor
   const limit = Math.min(L.length - frame, sampleRate * 10);
   const buf = new Float64Array(frame);
+  const sq = new Float64Array(frame + 1); // prefix sums of buf[i]^2
+  const re = new Float64Array(N);
+  const im = new Float64Array(N);
   const f0s = [];
 
   for (let start = 0; start < limit; start += hop) {
@@ -131,17 +134,22 @@ function detectPitch(channels, sampleRate) {
       const v = R ? 0.5 * (L[start + i] + R[start + i]) : L[start + i];
       buf[i] = v;
       rms += v * v;
+      sq[i + 1] = sq[i] + v * v;
     }
     if (Math.sqrt(rms / frame) < 0.01) continue; // silence
+
+    re.fill(0); im.fill(0);
+    re.set(buf);
+    fft(re, im);
+    for (let k = 0; k < N; k++) { re[k] = re[k] * re[k] + im[k] * im[k]; im[k] = 0; }
+    fft(re, im); // forward FFT of a real, even spectrum = N × autocorrelation
 
     let bestLag = 0;
     let bestCorr = 0;
     for (let lag = minLag; lag <= maxLag && lag < frame; lag++) {
-      let num = 0, den = 0;
-      for (let i = 0; i < frame - lag; i++) {
-        num += buf[i] * buf[i + lag];
-        den += buf[i] * buf[i] + buf[i + lag] * buf[i + lag];
-      }
+      const num = re[lag] / N;
+      // sum buf[i]^2 for i < frame-lag, plus sum buf[i+lag]^2 over the same i
+      const den = sq[frame - lag] + (sq[frame] - sq[lag]);
       const corr = den > 0 ? (2 * num) / den : 0;
       if (corr > bestCorr) {
         bestCorr = corr;
@@ -327,11 +335,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     e.preventDefault();
     if (isSpace) {
-      if (previewSrc) {
-        stopPreview();
-      } else {
-        startPreview().catch((err) => console.error('[Audio Editor] preview', err));
-      }
+      togglePreview();
       return;
     }
     if (!waveform.data) return;
@@ -339,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // in from the viewport edge.
     const t = e.key === 'ArrowLeft' ? waveform.trimStart : waveform.trimEnd;
     const px = (t / waveform.data.duration) * waveform._totalWidth();
-    const margin = waveform.canvas.width * (e.key === 'ArrowLeft' ? 0.1 : 0.9);
+    const margin = waveform.width * (e.key === 'ArrowLeft' ? 0.1 : 0.9);
     waveform.scrollX = px - margin;
     waveform._clampScroll();
     waveform.draw();
@@ -370,6 +374,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const BASE_STRETCH_TITLE = btnStretch.title;
   const targetBpmInput = document.getElementById('target-bpm');
   let stretchCache = { key: '', buffer: null };
+  // Bumped whenever decodedBuffer is replaced (Trim to Selection), and part
+  // of the preview cache key, so a cached render of the old buffer can't play.
+  let bufferGen = 0;
 
   function currentBpm() {
     // Prefer the detected tempo (no manual entry needed); fall back to the
@@ -379,7 +386,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const bars = Number(document.getElementById('bars-select').value) || 1;
     const beats = Number(document.getElementById('beats-select').value) || 4;
-    const len = waveform.trimEnd - waveform.trimStart;
+    const len = waveform.renderEnd - waveform.renderStart;
     return len > 0 ? (bars * beats * 60) / len : 0;
   }
 
@@ -398,14 +405,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const pitchInput = document.getElementById('pitch-input');
   const windowInput = document.getElementById('window-input');
   const transientInput = document.getElementById('transient-input');
-  const pitchSemitones = () => Math.max(-24, Math.min(24, Number(pitchInput.value) || 0));
+  // Whole semitones (the field steps by 1), so a typed 0.5 can't reach the
+  // render or leave the key label without a note name.
+  const pitchSemitones = () => Math.max(-24, Math.min(24, Math.round(Number(pitchInput.value) || 0)));
   const stretchWindowMs = () => Math.max(2, Math.min(120, Number(windowInput.value) || 48));
   const stretchTransient = () => Math.max(0, Math.min(1, (Number(transientInput.value) || 0) / 100));
   for (const el of [pitchInput, windowInput, transientInput]) {
-    el.addEventListener('input', () => {
-      stretchCache.key = ''; // invalidate cached granular preview
-      stopPreview();
-    });
+    el.addEventListener('input', () => stopPreview());
   }
   // Pitch shifts transpose the detected key/note — re-render the label live.
   pitchInput.addEventListener('input', () => renderKeyLabel());
@@ -563,7 +569,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const ledEl = document.getElementById('led');
   function setLed(on) { if (ledEl) ledEl.classList.toggle('on', on); }
 
+  // Bumped by every stop, so a start still awaiting decode/resume can tell it
+  // was cancelled (a second Space press) and not start an orphaned source.
+  let previewGen = 0;
+  let previewPending = false;
+
   function stopPreview() {
+    previewGen++;
+    previewPending = false;
     cancelAnimationFrame(playheadRaf);
     if (previewSrc) {
       previewSrc.onended = null;
@@ -574,169 +587,106 @@ document.addEventListener('DOMContentLoaded', () => {
     setLed(false);
   }
 
-  function buildPreviewBuffer(buffer, mode) {
-    let out;
-    if (mode === 'stereo') {
-      // Copy so fades can be applied without mutating the decoded master.
-      out = audioCtx.createBuffer(buffer.numberOfChannels, buffer.length, buffer.sampleRate);
-      for (let c = 0; c < buffer.numberOfChannels; c++) {
-        out.copyToChannel(buffer.getChannelData(c), c);
-      }
+  function togglePreview() {
+    if (previewSrc || previewPending) {
+      stopPreview();
     } else {
-      const left = buffer.getChannelData(0);
-      const right = buffer.numberOfChannels > 1 ? buffer.getChannelData(1) : left;
-      out = audioCtx.createBuffer(1, buffer.length, buffer.sampleRate);
-      const d = out.getChannelData(0);
-      for (let i = 0; i < buffer.length; i++) {
-        if (mode === 'left') d[i] = left[i];
-        else if (mode === 'right') d[i] = right[i];
-        else if (mode === 'mixed') d[i] = 0.5 * left[i] + 0.5 * right[i];
-        else d[i] = 0.5 * left[i] - 0.5 * right[i]; // side
-      }
-    }
-    applyPreviewDc(out);
-    applyPreviewFades(out);
-    return out;
-  }
-
-  // Remove DC offset per channel — mirrors the processor (before gain/fades).
-  function applyPreviewDc(buffer) {
-    if (!dcEnabled) return;
-    for (let c = 0; c < buffer.numberOfChannels; c++) {
-      const d = buffer.getChannelData(c);
-      let sum = 0;
-      for (let i = 0; i < d.length; i++) sum += d[i];
-      const mean = sum / d.length;
-      if (mean !== 0) for (let i = 0; i < d.length; i++) d[i] -= mean;
+      startPreview().catch((err) => console.error('[Audio Editor] preview', err));
     }
   }
 
-  // Apply the editor's fade envelopes at their on-screen anchors (the trim
-  // region edges), using the same shared curve math as the processor.
-  function applyPreviewFades(buffer) {
+  // The preview audio is built by the render's own code: Dsp.processSamples
+  // (crop, channel, DC, fades) then TimeStretch for stretch/pitch, on exactly
+  // the range Process will render. Only gain is applied live, through a gain
+  // node, so the slider responds while playing.
+  async function renderPreview(buffer, a, b) {
     const sr = buffer.sampleRate;
-    for (const which of ['in', 'out']) {
-      const { spec, len, t0 } = waveform._fadeRange(which);
-      if (len <= 0) continue;
-      const s = Math.max(0, Math.floor(t0 * sr));
-      const n = Math.min(buffer.length - s, Math.round(len * sr));
-      for (let c = 0; c < buffer.numberOfChannels; c++) {
-        const d = buffer.getChannelData(c);
-        for (let i = 0; i < n; i++) {
-          const p = i / n;
-          d[s + i] *= window.Fades.fadeGain(which === 'in' ? p : 1 - p, spec.type, spec.bend);
-        }
-      }
+    const looped = waveform.hasLoop && loopEnabled;
+    const ratio = stretchRatio();
+    const pitch = pitchSemitones();
+    const win = stretchWindowMs();
+    const trans = stretchTransient();
+    const fadeIn = fadeResult('in');
+    const fadeOut = fadeResult('out');
+    const key = JSON.stringify([
+      bufferGen, Math.round(a * sr), Math.round(b * sr), selectedChannel, dcEnabled, looped,
+      fadeIn, fadeOut, ratio, pitch, win, trans,
+    ]);
+    if (stretchCache.key === key) return stretchCache.buffer;
+    const chans = [];
+    for (let c = 0; c < buffer.numberOfChannels; c++) chans.push(buffer.getChannelData(c));
+    let out = window.Dsp.processSamples(chans, sr, {
+      gain_dB: 0, channel: selectedChannel, crop: true, trimStart: a, trimEnd: b,
+      fadeIn, fadeOut, removeDc: dcEnabled,
+    });
+    if (out[0].length === 0) return null;
+    if (window.Dsp.hasStretch(ratio) || window.Dsp.hasPitch(pitch)) {
+      out = await window.TimeStretch.stretchCyclic(out, ratio, sr, looped, {
+        pitch, windowMs: win, transient: trans,
+      });
     }
+    const rendered = audioCtx.createBuffer(out.length, out[0].length, sr);
+    out.forEach((ch, c) => rendered.copyToChannel(ch, c));
+    stretchCache = { key, buffer: rendered };
+    return rendered;
   }
 
   async function startPreview() {
+    if (previewSrc || previewPending) return;
+    const gen = ++previewGen;
+    previewPending = true;
     const buf = await getDecodedBuffer();
-    if (!buf) return;
+    if (gen !== previewGen) return; // stopped while decoding
+    if (!buf) { previewPending = false; return; }
     if (audioCtx.state === 'suspended') await audioCtx.resume();
+    if (gen !== previewGen) return;
+
+    const a = waveform.renderStart;
+    const b = waveform.renderEnd;
+    const looped = waveform.hasLoop && loopEnabled;
+    const rendered = b > a ? await renderPreview(buf, a, b) : null;
+    if (gen !== previewGen) return;
+    previewPending = false;
+    if (!rendered) return;
+
     previewGain = audioCtx.createGain();
     previewGain.gain.value = Math.pow(10, Number(gainSlider.value) / 20);
     previewSrc = audioCtx.createBufferSource();
+    previewSrc.buffer = rendered;
+    previewSrc.loop = looped;
     previewSrc.connect(previewGain);
     previewGain.connect(audioCtx.destination);
     previewSrc.onended = stopPreview;
     setLed(true);
 
-    // Stretched / pitched preview: render the selection at the target tempo
-    // and/or pitch and play that, mapping the playhead back onto the region.
-    // The unstretched full-buffer is only built on the plain path below.
-    const ratio = stretchRatio();
-    const pitch = pitchSemitones();
-    if (ratio !== 1 || pitch !== 0) {
-      // Stretch the selection (matches the BPM basis and the processor crop);
-      // loop only governs cyclic seamlessness and whether preview cycles.
-      const looped = waveform.hasLoop && loopEnabled;
-      const segStart = waveform.trimStart;
-      const segEnd = waveform.trimEnd;
-      const sr = decodedBuffer.sampleRate;
-      const f0 = Math.max(0, Math.floor(segStart * sr));
-      const f1 = Math.min(decodedBuffer.length, Math.ceil(segEnd * sr));
-      const fi = waveform.fadeIn;
-      const fo = waveform.fadeOut;
-      const win = stretchWindowMs();
-      const trans = stretchTransient();
-      const cacheKey = [
-        f0, f1, ratio.toFixed(5), selectedChannel, looped,
-        fi.len.toFixed(4), fi.type, fi.bend.toFixed(3),
-        fo.len.toFixed(4), fo.type, fo.bend.toFixed(3),
-        pitch, win, trans.toFixed(3),
-      ].join(':');
-      if (stretchCache.key !== cacheKey) {
-        const base = buildPreviewBuffer(decodedBuffer, selectedChannel);
-        const seg = [];
-        for (let c = 0; c < base.numberOfChannels; c++) {
-          seg.push(base.getChannelData(c).slice(f0, f1));
-        }
-        const stretched = await window.TimeStretch.stretchCyclic(seg, ratio, sr, looped, {
-          pitch, windowMs: win, transient: trans,
-        });
-        const buf = audioCtx.createBuffer(stretched.length, stretched[0].length, sr);
-        stretched.forEach((ch, c) => buf.copyToChannel(ch, c));
-        stretchCache = { key: cacheKey, buffer: buf };
-      }
-      previewSrc.buffer = stretchCache.buffer;
-      previewSrc.loop = looped;
-      previewSrc.start(0);
-      btnPreview.textContent = '■ Stop';
-
-      const stretchedDur = stretchCache.buffer.duration;
-      const st0 = audioCtx.currentTime;
-      const animateStretched = () => {
-        if (!previewSrc) return;
-        let el = audioCtx.currentTime - st0;
-        if (previewSrc.loop) el %= stretchedDur;
-        else el = Math.min(el, stretchedDur);
-        waveform.setPlayhead(segStart + (el / stretchedDur) * (segEnd - segStart));
-        playheadRaf = requestAnimationFrame(animateStretched);
-      };
-      playheadRaf = requestAnimationFrame(animateStretched);
-      return;
-    }
-
-    previewSrc.buffer = buildPreviewBuffer(decodedBuffer, selectedChannel);
-    let start;
-    if (waveform.hasLoop && loopEnabled) {
-      // Loop playback: start from the playhead if it sits inside the loop,
-      // else from loop start, and cycle until stopped.
-      previewSrc.loop = true;
-      previewSrc.loopStart = waveform.loopStart;
-      previewSrc.loopEnd = waveform.loopEnd;
-      start = waveform.playhead >= waveform.loopStart && waveform.playhead < waveform.loopEnd
-        ? waveform.playhead
-        : waveform.loopStart;
-      previewSrc.start(0, start);
-    } else {
-      // Play from the playhead if it sits inside the trim region, else from
-      // the region start; stop at the out point.
-      start = Math.max(waveform.trimStart, Math.min(waveform.playhead, waveform.trimEnd));
-      if (waveform.trimEnd - start < 0.01) start = waveform.trimStart;
-      previewSrc.start(0, start, Math.max(0, waveform.trimEnd - start));
-    }
+    // Start from the playhead when it sits inside the range, mapped onto the
+    // (possibly stretched) render; otherwise from the range start.
+    const dur = rendered.duration;
+    let frac = (waveform.playhead - a) / (b - a);
+    if (!(frac >= 0 && frac < 1) || (1 - frac) * dur < 0.01) frac = 0;
+    const offset = frac * dur;
+    previewSrc.start(0, offset);
     btnPreview.textContent = '■ Stop';
 
     const t0 = audioCtx.currentTime;
     const animate = () => {
       if (!previewSrc) return;
-      let t = start + (audioCtx.currentTime - t0);
-      if (previewSrc.loop && waveform.hasLoop) {
-        // Track loop-point drags live, and wrap the playhead with the cycle.
-        previewSrc.loopStart = waveform.loopStart;
-        previewSrc.loopEnd = waveform.loopEnd;
-        if (t > waveform.loopEnd) {
-          const len = waveform.loopEnd - waveform.loopStart;
-          t = waveform.loopStart + ((t - waveform.loopEnd) % len);
-        }
-      }
-      waveform.setPlayhead(t);
+      let el = offset + (audioCtx.currentTime - t0);
+      el = looped ? el % dur : Math.min(el, dur);
+      waveform.setPlayhead(a + (el / dur) * (b - a));
       playheadRaf = requestAnimationFrame(animate);
     };
     playheadRaf = requestAnimationFrame(animate);
   }
+
+  // A finished drag of the selection, loop or fade handles restarts a running
+  // preview, so what plays always matches the current edit.
+  waveform.onEditEnd = () => {
+    if (previewSrc) {
+      stopPreview();
+      startPreview().catch((e) => console.error('[Audio Editor] preview', e));
+    }
+  };
 
   // Moving the playhead during playback restarts playback from the new position.
   waveform.onPlayheadSeek = () => {
@@ -899,13 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 0);
   }
 
-  btnPreview.addEventListener('click', () => {
-    if (previewSrc) {
-      stopPreview();
-    } else {
-      startPreview().catch((e) => console.error('[Audio Editor] preview', e));
-    }
-  });
+  btnPreview.addEventListener('click', togglePreview);
 
   // Loop on/off — keeps the loop region, just toggles whether playback cycles.
   let loopEnabled = false;
@@ -920,7 +864,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   btnLoop.addEventListener('click', () => {
-    const wasPlaying = !!previewSrc;
+    const wasPlaying = !!previewSrc || previewPending;
     if (!loopEnabled && !waveform.hasLoop) {
       // No loop region yet: create one from the current selection.
       waveform.setLoop(waveform.trimStart, waveform.trimEnd);
@@ -957,9 +901,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDc = document.getElementById('btn-dc');
   btnDc.addEventListener('click', () => {
     dcEnabled = !dcEnabled;
+    waveform.removeDc = dcEnabled; // ZC snaps on the DC-free signal
     btnDc.classList.toggle('is-on', dcEnabled);
     btnDc.blur();
-    stretchCache.key = ''; // invalidate cached stretched preview
     stopPreview();
   });
 
@@ -985,28 +929,6 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentDuration = data.duration;
   const originalDuration = data.duration;
 
-  function computePeaks(channels, count) {
-    const peaks = [];
-    for (let c = 0; c < channels.length; c++) {
-      const ch = channels[c];
-      const blockSize = Math.max(1, Math.floor(ch.length / count));
-      const chPeaks = [];
-      for (let i = 0; i < count; i++) {
-        const s = i * blockSize;
-        const e = Math.min(s + blockSize, ch.length);
-        let mn = 0, mx = 0;
-        for (let j = s; j < e; j++) {
-          const v = ch[j];
-          if (v < mn) mn = v;
-          if (v > mx) mx = v;
-        }
-        chPeaks.push(mn, mx);
-      }
-      peaks.push(chPeaks);
-    }
-    return peaks;
-  }
-
   document.getElementById('btn-trim').addEventListener('click', () => {
     if (!decodedBuffer) return;
     stopPreview();
@@ -1028,17 +950,21 @@ document.addEventListener('DOMContentLoaded', () => {
       chans.push(sliced.getChannelData(c));
     }
     decodedBuffer = sliced;
+    bufferGen++;
     viewOffset += selStart;
     currentDuration = (f1 - f0) / sr;
+    // load() hands the tempo back to detection; keep a Bars/Beats override.
+    const manualTempo = waveform.manualTempo;
 
     waveform.clearLoop();
     waveform.load({
-      peaks: computePeaks(chans, 2000),
+      peaks: window.Dsp.computePeaks(chans, 2000),
       duration: currentDuration,
       sampleRate: sr,
       channels: data.channels,
       fileName: data.fileName,
     });
+    waveform.manualTempo = manualTempo;
     waveform.setSampleData(chans, sr);
     waveform.setChannelMode(selectedChannel);
     waveform.setPlayhead(0);
@@ -1074,8 +1000,9 @@ document.addEventListener('DOMContentLoaded', () => {
       viewOffset,
       currentDuration,
       originalDuration,
-      trimStart: waveform.trimStart,
-      trimEnd: waveform.trimEnd,
+      // The range the preview plays: the loop region while Loop is on.
+      trimStart: waveform.renderStart,
+      trimEnd: waveform.renderEnd,
     });
     return {
       cancelled: false,

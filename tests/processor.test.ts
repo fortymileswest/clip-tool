@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { processSamples, processAudio } from '../src/processor.ts';
+import { processSamples, processAudio, ProcessCancelled } from '../src/processor.ts';
 import { encodeWavFile } from '../src/wavEncoder.ts';
 import { decodeWav } from '../src/wavDecoder.ts';
 
@@ -266,4 +266,46 @@ test('processAudio round-trips through WAV encode/decode', async () => {
   const factor = Math.pow(10, -6 / 20);
   const expected = left[480]! * factor;
   assert.ok(Math.abs(result.getChannelData(0)[0]! - expected) < 1e-6);
+});
+
+test('processAudio stops with ProcessCancelled when its signal aborts, writing nothing', async () => {
+  const dir = os.tmpdir();
+  const inputPath = path.join(dir, `audio-editor-cancel-in-${process.pid}.wav`);
+  const outputPath = path.join(dir, `audio-editor-cancel-out-${process.pid}.wav`);
+  const frames = 48000;
+  const ch = new Float32Array(frames);
+  for (let i = 0; i < frames; i++) ch[i] = Math.sin((2 * Math.PI * 440 * i) / 48000);
+  await encodeWavFile(inputPath, [ch], 48000);
+  const fsp = await import('node:fs/promises');
+  await fsp.rm(outputPath, { force: true });
+
+  const ctl = new AbortController();
+  let ticks = 0;
+  await assert.rejects(
+    processAudio(
+      { inputPath, outputPath, gain_dB: 0, channel: 'left', crop: false, trimStart: 0, trimEnd: 1, pitchSemitones: 12 },
+      () => { if (++ticks === 3) ctl.abort(); },
+      ctl.signal,
+    ),
+    ProcessCancelled,
+  );
+  await assert.rejects(fsp.stat(outputPath));
+  await fsp.rm(inputPath, { force: true });
+});
+
+test('a ratio just off 1× is still rendered as a stretch (as the preview plays it)', async () => {
+  const dir = os.tmpdir();
+  const inputPath = path.join(dir, `audio-editor-near1-in-${process.pid}.wav`);
+  const outputPath = path.join(dir, `audio-editor-near1-out-${process.pid}.wav`);
+  const frames = 48000;
+  await encodeWavFile(inputPath, [new Float32Array(frames).fill(0.1)], 48000);
+  await processAudio({
+    inputPath, outputPath, gain_dB: 0, channel: 'left', crop: false, trimStart: 0, trimEnd: 1,
+    stretchRatio: 120.1 / 120,
+  });
+  const out = await decodeWav(outputPath);
+  assert.equal(out.getChannelData(0).length, Math.round(frames * (120.1 / 120)));
+  const fsp = await import('node:fs/promises');
+  await fsp.rm(inputPath, { force: true });
+  await fsp.rm(outputPath, { force: true });
 });

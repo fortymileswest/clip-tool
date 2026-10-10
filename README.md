@@ -58,7 +58,9 @@ turning a rough chop into something playable without leaving Live.
 - **ZC** to snap edit points to zero-crossings so they don't click.
 - **Fades** in and out with Linear, Exponential, Logarithmic or S-curve shapes
   (right-click), with draggable length and a mid-curve bend handle.
-- A **Loop** region with its own handles and an on/off toggle.
+- A **Loop** region with its own handles and an on/off toggle. While Loop is on,
+  the loop region is what plays, what the fades sit on and what gets rendered,
+  as a seamless cycle.
 - A pitch-preserving, loop-seamless **time-stretch** to a target BPM, from a
   quarter to four times the length (the Stretch button shows MIN or MAX when the
   target BPM asks for more).
@@ -84,7 +86,11 @@ turning a rough chop into something playable without leaving Live.
 
 **Output** (all of these apply your gain, fade, stretch, channel and DC settings)
 
-- **Process** replaces the clip in place.
+Each output renders what Preview plays: the selection (or the loop region while
+Loop is on). To render the whole clip, right-click and **Clear selection** first.
+
+- **Process** replaces the clip in place. A cropped result stays where that audio
+  sat in the arrangement.
 - **Copy to Arrangement** drops a new clip just after the original.
 - **→ Simpler** builds a new MIDI track with a Simpler loaded and ready to play.
 - **Rename** the rendered sample by right-clicking the filename.
@@ -253,9 +259,10 @@ EXTENSION_HOST_PATH=/Applications/Ableton Live 12 Beta.app/Contents/Helpers/Exte
 - `src/extension.ts` runs in Live's Extension Host: it registers the right-click
   action, renders the clip to a temporary WAV, shows the editor, and writes the
   result back.
-- `src/processor.ts`, `src/fades.ts` and `src/timestretch.ts` hold the DSP,
-  compiled once for Node and once as browser globals so the preview and the final
-  render use the same maths. `src/editRange.ts` (the range each button renders,
+- `src/dsp.ts` (crop, channel, DC, gain, fades, waveform peaks), `src/fades.ts`
+  and `src/timestretch.ts` hold the DSP, compiled once for Node and once as
+  browser globals, so the preview runs the same code as the final render.
+  `src/processor.ts` wraps it with WAV file I/O, progress and cancel. `src/editRange.ts` (the range each button renders,
   and the stretch limits) is shared the same way.
 - `src/wavDecoder.ts` reads Live's render (PCM, float and extensible WAV), and
   `src/userMessages.ts` holds the error dialog and the long-clip notice.

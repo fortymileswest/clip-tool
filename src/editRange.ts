@@ -6,7 +6,7 @@
 export interface RangeState {
   /** A fade-in or fade-out is set. Fades are anchored to the selection edges. */
   hasFades: boolean;
-  /** The loop/selection is shown and enabled. */
+  /** Loop is on: the range below is the loop region, rendered as a cycle. */
   hasExplicitSelection: boolean;
   /** Seconds the working view starts into the original render (Trim to Selection). */
   viewOffset: number;
@@ -34,15 +34,22 @@ export function hasTrimmedView(s: Pick<RangeState, 'viewOffset' | 'currentDurati
   return s.viewOffset > TRIM_EPS || s.currentDuration < s.originalDuration - TRIM_EPS;
 }
 
+/** True when the selection is narrower than the working view. */
+export function hasNarrowSelection(s: Pick<RangeState, 'trimStart' | 'trimEnd' | 'currentDuration'>): boolean {
+  return s.trimStart > TRIM_EPS || s.trimEnd < s.currentDuration - TRIM_EPS;
+}
+
 /**
  * The backend always renders from the original file, so the editor must crop
  * back to the selection whenever what the user hears is narrower than the
- * whole file: an enabled selection, a trimmed view, or fades (which sit on the
- * selection edges, so without a crop they would land on the file edges).
+ * whole file: a narrowed selection, an enabled loop, a trimmed view, or fades
+ * (which sit on the selection edges, so without a crop they would land on the
+ * file edges). trimStart/trimEnd are the range the preview plays: the loop
+ * region when Loop is on, else the selection.
  */
 export function renderRange(s: RangeState): RenderRange {
   return {
-    crop: s.hasFades || s.hasExplicitSelection || hasTrimmedView(s),
+    crop: s.hasFades || s.hasExplicitSelection || hasTrimmedView(s) || hasNarrowSelection(s),
     trimStart: s.viewOffset + s.trimStart,
     trimEnd: s.viewOffset + s.trimEnd,
   };

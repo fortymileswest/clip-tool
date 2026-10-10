@@ -1,4 +1,7 @@
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+
+const LITTLE_ENDIAN = os.endianness() === 'LE';
 
 // Minimal WAV encoder — writes 32-bit IEEE float, which Live imports natively
 // and preserves the full precision of the Float32Array processing pipeline.
@@ -51,11 +54,30 @@ export async function encodeWavFile(
   writeTag('data');
   view.setUint32(o, dataSize, true); o += 4;
 
-  for (let i = 0; i < frameCount; i++) {
-    if (onProgress && i % 100000 === 0) await onProgress(i / frameCount);
-    for (let c = 0; c < numChannels; c++) {
-      view.setFloat32(o, channels[c]![i]!, true);
-      o += 4;
+  // Interleave into a Float32Array and copy its bytes in, rather than a
+  // DataView call per sample. Typed arrays use the host byte order, which is
+  // little-endian (as WAV requires) on every Mac and Windows machine; the
+  // DataView path stays for any other host.
+  const CHUNK = 100000;
+  const inter = LITTLE_ENDIAN ? new Float32Array(Math.min(frameCount, CHUNK) * numChannels) : null;
+  for (let i0 = 0; i0 < frameCount; i0 += CHUNK) {
+    if (onProgress) await onProgress(i0 / frameCount);
+    const i1 = Math.min(frameCount, i0 + CHUNK);
+    if (inter) {
+      for (let c = 0; c < numChannels; c++) {
+        const ch = channels[c]!;
+        for (let i = i0, j = c; i < i1; i++, j += numChannels) inter[j] = ch[i]!;
+      }
+      const n = (i1 - i0) * numChannels * 4;
+      buf.set(new Uint8Array(inter.buffer, 0, n), o);
+      o += n;
+    } else {
+      for (let i = i0; i < i1; i++) {
+        for (let c = 0; c < numChannels; c++) {
+          view.setFloat32(o, channels[c]![i]!, true);
+          o += 4;
+        }
+      }
     }
   }
   if (onProgress) await onProgress(1);

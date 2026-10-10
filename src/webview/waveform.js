@@ -17,6 +17,15 @@ const SCREEN = {
   outline: 'rgba(0,0,0,0.7)',
 };
 
+// m:ss.mmm. Rounds to the millisecond first so 59.9996 s reads 1:00.000, not
+// 0:60.000. Shared with controls.js (both are classic scripts on one page).
+function fmtTime(s) {
+  const ms = Math.max(0, Math.round(s * 1000));
+  const m = Math.floor(ms / 60000);
+  const sec = ((ms % 60000) / 1000).toFixed(3);
+  return `${m}:${sec.padStart(6, '0')}`;
+}
+
 class WaveformCanvas {
   constructor(canvasEl, containerEl) {
     this.canvas = canvasEl;
@@ -35,6 +44,10 @@ class WaveformCanvas {
     this.trimEnd = 0;
     this.playhead = 0;
     this.onPlayheadSeek = null;
+    // Called when a drag that changes what is rendered (selection, loop or
+    // fade handles) ends, so a running preview can restart with the change.
+    this.onEditEnd = null;
+    this.removeDc = false; // mirrors the DC button, for zero-crossing snap
     this.loopStart = null;
     this.loopEnd = null;
     this.loopEnabled = false; // matches controls.js; set on by the Loop toggle
@@ -47,6 +60,12 @@ class WaveformCanvas {
     // BPM/grid follow bars × beats instead. Reset whenever new audio loads.
     this.manualTempo = false;
     this.dragging = null;
+    // Logical (CSS pixel) size; the backing store is this × devicePixelRatio.
+    this.width = 0;
+    this.height = 0;
+    // Everything but the playhead, cached so playback only redraws the line.
+    this._layer = document.createElement('canvas');
+    this._layerValid = false;
     this._setupResize();
     this._setupDrag();
   }
@@ -71,11 +90,11 @@ class WaveformCanvas {
     // selection, and the fades (anchored to the selection edges) should carry
     // over so the preview keeps reflecting them. They start at zero from the
     // constructor for the initial load.
-    // Allow zooming all the way to individual samples: at max zoom one sample
-    // spans ~8px regardless of sample count.
-    const frames = waveformData.duration * waveformData.sampleRate;
-    this.maxZoom = Math.max(20, Math.ceil((frames * 8) / Math.max(1, this.canvas.width || 960)));
     this._resize();
+    // Allow zooming all the way to individual samples: at max zoom one sample
+    // spans ~8px regardless of sample count. After _resize, so the real width
+    // is used rather than the canvas default.
+    this._updateMaxZoom(waveformData.sampleRate);
     // Re-derive the displayed peaks for the current channel mode rather than
     // forcing stereo, so a trim preserves a mono left/right/mixed/side view.
     this.setChannelMode(this.channelMode);
@@ -91,11 +110,25 @@ class WaveformCanvas {
       ? sampleRate
       : (this.data && this.data.duration > 0 ? channels[0].length / this.data.duration : 0);
     // Keep "one sample spans ~8px at max zoom" true for the decoded buffer.
-    if (this.data && this.samplesRate > 0) {
-      const frames = this.data.duration * this.samplesRate;
-      this.maxZoom = Math.max(20, Math.ceil((frames * 8) / Math.max(1, this.canvas.width || 960)));
-    }
+    if (this.samplesRate > 0) this._updateMaxZoom(this.samplesRate);
+    this._dcMean = null;
     this.setChannelMode(this.channelMode);
+  }
+
+  _updateMaxZoom(sampleRate) {
+    if (!this.data) return;
+    const frames = this.data.duration * sampleRate;
+    this.maxZoom = Math.max(20, Math.ceil((frames * 8) / Math.max(1, this.width || 960)));
+  }
+
+  // The range Process renders and Preview plays: the loop region while Loop is
+  // on, otherwise the selection. Fades sit on its edges.
+  get renderStart() {
+    return this.hasLoop && this.loopEnabled ? this.loopStart : this.trimStart;
+  }
+
+  get renderEnd() {
+    return this.hasLoop && this.loopEnabled ? this.loopEnd : this.trimEnd;
   }
 
   // Recompute displayed peaks (and samples, when available) for a channel mode.
@@ -140,6 +173,7 @@ class WaveformCanvas {
         for (let i = 0; i < L.length; i++) out[i] = 0.5 * L[i] + sign * 0.5 * R[i];
         this.displaySamples = [out];
       }
+      this._dcMean = null;
     }
 
     this.draw();
@@ -166,16 +200,19 @@ class WaveformCanvas {
     const total = this._totalWidth();
     const selStartPx = (this.trimStart / this.data.duration) * total;
     const selWidthPx = (selLen / this.data.duration) * total;
-    this.scrollX = selStartPx - (this.canvas.width - selWidthPx) / 2;
+    this.scrollX = selStartPx - (this.width - selWidthPx) / 2;
     this._clampScroll();
     this._syncZoomSlider();
     this.draw();
   }
 
+  // Only the playhead moves, so reuse the cached layer (playback calls this
+  // every animation frame).
   setPlayhead(t) {
     if (!this.data) return;
     this.playhead = Math.max(0, Math.min(this.data.duration, t));
-    this.draw();
+    if (this._layerValid) this._present();
+    else this.draw();
   }
 
   setLoop(start, end) {
@@ -198,16 +235,27 @@ class WaveformCanvas {
     return this.loopStart !== null && this.loopEnd !== null;
   }
 
-  // Nearest zero crossing to time t (mono mix of channels), searching up to
-  // one second outward. Returns t unchanged if audio is not decoded yet.
+  // Nearest zero crossing to time t of the signal that will be rendered: the
+  // current channel mode (stereo snaps on the L+R mix) with the DC offset
+  // removed when DC is on. Searches up to one second outward; returns t
+  // unchanged if audio is not decoded yet.
   _snapToZC(t) {
-    const s = this.samples;
+    const s = this.displaySamples;
     if (!s || !this.data || !this.samplesRate) return t;
     const sr = this.samplesRate;
     const L = s[0];
     const R = s[1];
     const n = L.length;
-    const val = (i) => (R ? 0.5 * (L[i] + R[i]) : L[i]);
+    let dc = 0;
+    if (this.removeDc) {
+      if (this._dcMean === null) {
+        let sum = 0;
+        for (let i = 0; i < n; i++) sum += R ? 0.5 * (L[i] + R[i]) : L[i];
+        this._dcMean = n > 0 ? sum / n : 0;
+      }
+      dc = this._dcMean;
+    }
+    const val = (i) => (R ? 0.5 * (L[i] + R[i]) : L[i]) - dc;
     const i0 = Math.max(1, Math.min(n - 1, Math.round(t * sr)));
     const maxDist = Math.min(n - 1, Math.ceil(sr));
     for (let d = 0; d <= maxDist; d++) {
@@ -228,19 +276,29 @@ class WaveformCanvas {
     ro.observe(this.container);
   }
 
+  // Size the backing store in device pixels so the trace is sharp on HiDPI
+  // (Retina) screens; all drawing uses logical pixels via the transform.
   _resize() {
-    this.canvas.width = this.container.clientWidth;
-    this.canvas.height = this.container.clientHeight;
+    const dpr = window.devicePixelRatio || 1;
+    this.width = this.container.clientWidth;
+    this.height = this.container.clientHeight;
+    this.canvas.width = Math.round(this.width * dpr);
+    this.canvas.height = Math.round(this.height * dpr);
+    this.canvas.style.width = `${this.width}px`;
+    this.canvas.style.height = `${this.height}px`;
+    this._layer.width = this.canvas.width;
+    this._layer.height = this.canvas.height;
+    this._dpr = dpr;
     this._clampScroll();
     this.draw();
   }
 
   _totalWidth() {
-    return this.canvas.width * this.zoom;
+    return this.width * this.zoom;
   }
 
   _clampScroll() {
-    const maxScroll = Math.max(0, this._totalWidth() - this.canvas.width);
+    const maxScroll = Math.max(0, this._totalWidth() - this.width);
     this.scrollX = Math.max(0, Math.min(this.scrollX, maxScroll));
   }
 
@@ -254,10 +312,44 @@ class WaveformCanvas {
     return ((x + this.scrollX) / this._totalWidth()) * this.data.duration;
   }
 
+  // Full redraw: everything except the playhead goes to the cached layer.
   draw() {
     if (!this.data || this.data.duration <= 0 || !this.data.peaks.length) return;
-    const { ctx, canvas } = this;
-    const { width, height } = canvas;
+    const lctx = this._layer.getContext('2d');
+    lctx.setTransform(this._dpr || 1, 0, 0, this._dpr || 1, 0, 0);
+    this.ctx = lctx;
+    try {
+      this._drawLayer();
+    } finally {
+      this.ctx = this.canvas.getContext('2d');
+    }
+    this._layerValid = true;
+    this._present();
+    this._updateBpm();
+  }
+
+  // Blit the cached layer and draw the playhead over it.
+  _present() {
+    const ctx = this.canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    ctx.drawImage(this._layer, 0, 0);
+    ctx.setTransform(this._dpr || 1, 0, 0, this._dpr || 1, 0, 0);
+    const px = Math.round(this._timeToX(this.playhead));
+    if (px >= 0 && px <= this.width) {
+      ctx.globalAlpha = 1;
+      ctx.beginPath();
+      ctx.strokeStyle = SCREEN.playhead;
+      ctx.lineWidth = 1;
+      ctx.moveTo(px + 0.5, 0);
+      ctx.lineTo(px + 0.5, this.height);
+      ctx.stroke();
+    }
+  }
+
+  _drawLayer() {
+    const { ctx } = this;
+    const { width, height } = this;
     const peaks = this.displayPeaks || this.data.peaks;
     const numChannels = peaks.length;
     const channelHeight = height / numChannels;
@@ -318,20 +410,6 @@ class WaveformCanvas {
     // Trim handles
     this._drawHandle(trimX1, height, 'start');
     this._drawHandle(trimX2, height, 'end');
-
-    // Playhead
-    const px = Math.round(this._timeToX(this.playhead));
-    if (px >= 0 && px <= width) {
-      ctx.globalAlpha = 1;
-      ctx.beginPath();
-      ctx.strokeStyle = SCREEN.playhead;
-      ctx.lineWidth = 1;
-      ctx.moveTo(px + 0.5, 0);
-      ctx.lineTo(px + 0.5, height);
-      ctx.stroke();
-    }
-
-    this._updateBpm();
   }
 
   // The detected tempo, but only while it's sane and the user hasn't taken
@@ -356,7 +434,7 @@ class WaveformCanvas {
     }
     const bars = this._bars();
     const beats = this._beats();
-    const len = this.trimEnd - this.trimStart;
+    const len = this.renderEnd - this.renderStart;
     if (len <= 0 || !bars || !beats) {
       el.textContent = '';
       return;
@@ -394,14 +472,14 @@ class WaveformCanvas {
       toT = this.data.duration;
     } else {
       const bars = this._bars();
-      const sel = this.trimEnd - this.trimStart;
+      const sel = this.renderEnd - this.renderStart;
       if (!bars || !beats || sel <= 0) return;
       const bpm = (bars * beats * 60) / sel;
       if (bpm < 20 || bpm > 999) return;
       interval = sel / (bars * beats);
-      phase = this.trimStart;
-      fromT = this.trimStart;
-      toT = this.trimEnd;
+      phase = this.renderStart;
+      fromT = this.renderStart;
+      toT = this.renderEnd;
     }
     if (interval <= 0) return;
 
@@ -437,8 +515,8 @@ class WaveformCanvas {
   }
 
   _drawChannelPeaks(chPeaks, yCenter, halfH) {
-    const { ctx, canvas } = this;
-    const width = canvas.width;
+    const { ctx } = this;
+    const width = this.width;
     const peakCount = chPeaks.length / 2;
     const pxPerPeak = this._totalWidth() / peakCount;
     const startPeak = Math.floor(this.scrollX / pxPerPeak);
@@ -485,8 +563,8 @@ class WaveformCanvas {
   }
 
   _drawChannelSamples(chan, yCenter, halfH) {
-    const { ctx, canvas } = this;
-    const width = canvas.width;
+    const { ctx } = this;
+    const width = this.width;
     const total = this._totalWidth();
     const frames = chan.length;
     const samplesPerPx = frames / total;
@@ -541,15 +619,16 @@ class WaveformCanvas {
     }
   }
 
-  // Time bounds of a fade region: 'in' grows from trimStart, 'out' shrinks
-  // back from trimEnd.
+  // Time bounds of a fade region: 'in' grows from the render start, 'out'
+  // shrinks back from the render end (the loop edges while Loop is on).
   _fadeRange(which) {
     const spec = which === 'in' ? this.fadeIn : this.fadeOut;
-    // Clamp to the selection so a shrunken selection cannot leave a fade
+    const a = this.renderStart, b = this.renderEnd;
+    // Clamp to the range so a shrunken selection cannot leave a fade
     // overhanging it.
-    const len = Math.min(spec.len, Math.max(0, this.trimEnd - this.trimStart));
-    if (which === 'in') return { spec, len, t0: this.trimStart, t1: this.trimStart + len };
-    return { spec, len, t0: this.trimEnd - len, t1: this.trimEnd };
+    const len = Math.min(spec.len, Math.max(0, b - a));
+    if (which === 'in') return { spec, len, t0: a, t1: a + len };
+    return { spec, len, t0: b - len, t1: b };
   }
 
   // Combined fade envelope (fade-in × fade-out) at time t; 1 when no fades.
@@ -709,7 +788,7 @@ class WaveformCanvas {
           this.dragging = which === 'in' ? 'fadeInLen' : 'fadeOutLen';
           return;
         }
-        const node = this._fadeNodeXY(which, this.canvas.height);
+        const node = this._fadeNodeXY(which, this.height);
         if (node && Math.abs(x - node.x) < 8 && Math.abs(y - node.y) < 8) {
           this.dragging = which === 'in' ? 'fadeInBend' : 'fadeOutBend';
           const spec = which === 'in' ? this.fadeIn : this.fadeOut;
@@ -740,14 +819,14 @@ class WaveformCanvas {
     this.canvas.addEventListener('mousemove', (e) => {
       if (!this.dragging || !this.data) return;
       const t = Math.max(0, Math.min(this.data.duration, this._xToTime(e.offsetX)));
-      const selLen = this.trimEnd - this.trimStart;
+      const selLen = this.renderEnd - this.renderStart;
       if (this.dragging === 'fadeInLen') {
-        this.fadeIn.len = Math.max(0, Math.min(selLen, t - this.trimStart));
+        this.fadeIn.len = Math.max(0, Math.min(selLen, t - this.renderStart));
         this.draw();
         return;
       }
       if (this.dragging === 'fadeOutLen') {
-        this.fadeOut.len = Math.max(0, Math.min(selLen, this.trimEnd - t));
+        this.fadeOut.len = Math.max(0, Math.min(selLen, this.renderEnd - t));
         this.draw();
         return;
       }
@@ -792,11 +871,14 @@ class WaveformCanvas {
     });
 
     window.addEventListener('mouseup', () => {
-      // A press that never turned into a selection drag is a click: seek.
-      if (this.dragging === 'maybe-select' && this.onPlayheadSeek) {
-        this.onPlayheadSeek(this.playhead);
-      }
+      const was = this.dragging;
       this.dragging = null;
+      // A press that never turned into a selection drag is a click: seek.
+      if (was === 'maybe-select') {
+        if (this.onPlayheadSeek) this.onPlayheadSeek(this.playhead);
+      } else if (was && this.onEditEnd) {
+        this.onEditEnd();
+      }
     }, { signal });
 
     this.canvas.addEventListener('wheel', (e) => {
@@ -837,11 +919,6 @@ class WaveformCanvas {
   }
 
   _updateTrimInfo() {
-    const fmtTime = (s) => {
-      const m = Math.floor(s / 60);
-      const sec = (s % 60).toFixed(3);
-      return `${m}:${sec.padStart(6, '0')}`;
-    };
     const el = document.getElementById('trim-info');
     if (el) {
       const dur = this.trimEnd - this.trimStart;

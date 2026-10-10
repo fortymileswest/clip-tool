@@ -1,4 +1,7 @@
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
+
+const LITTLE_ENDIAN = os.endianness() === 'LE';
 
 export interface DecodedAudio {
   numberOfChannels: number;
@@ -117,11 +120,31 @@ export async function decodeWavBuffer(
     () => new Float32Array(frameCount),
   );
 
-  for (let i = 0; i < frameCount; i++) {
-    if (onProgress && i % 100000 === 0) await onProgress(i / frameCount);
-    for (let c = 0; c < channels; c++) {
-      const pos = dataOffset + i * blockAlign + c * bytesPerSample;
-      channelBuffers[c]![i] = readSample(view, pos, bytesPerSample, isFloat);
+  // 32-bit float and 16-bit PCM (the common cases, and what Live renders) are
+  // read through a typed-array view on little-endian hosts — every Mac and
+  // Windows machine — instead of a DataView call per sample. The data is
+  // copied first, as the chunk need not be aligned for a typed array.
+  const fast = LITTLE_ENDIAN && ((isFloat && bytesPerSample === 4) || (!isFloat && bytesPerSample === 2));
+  const CHUNK = 100000;
+  for (let i0 = 0; i0 < frameCount; i0 += CHUNK) {
+    if (onProgress) await onProgress(i0 / frameCount);
+    const i1 = Math.min(frameCount, i0 + CHUNK);
+    if (fast) {
+      const start = buf.byteOffset + dataOffset + i0 * blockAlign;
+      const bytes = buf.buffer.slice(start, start + (i1 - i0) * blockAlign);
+      const src = isFloat ? new Float32Array(bytes) : new Int16Array(bytes);
+      const scale = isFloat ? 1 : 1 / 32768;
+      for (let c = 0; c < channels; c++) {
+        const dst = channelBuffers[c]!;
+        for (let i = i0, j = c; i < i1; i++, j += channels) dst[i] = src[j]! * scale;
+      }
+    } else {
+      for (let i = i0; i < i1; i++) {
+        for (let c = 0; c < channels; c++) {
+          const pos = dataOffset + i * blockAlign + c * bytesPerSample;
+          channelBuffers[c]![i] = readSample(view, pos, bytesPerSample, isFloat);
+        }
+      }
     }
   }
   if (onProgress) await onProgress(1);

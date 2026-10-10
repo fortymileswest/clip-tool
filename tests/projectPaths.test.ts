@@ -3,13 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
-import { getProcessedDir, ensureDir, nextOutputPath, uniqueNamedPath } from '../src/projectPaths.ts';
-
-test('getProcessedDir returns Samples/Processed relative to project dir', () => {
-  const songPath = '/Users/danny/Music/MyProject/MyProject.als';
-  const result = getProcessedDir(songPath);
-  assert.equal(result, '/Users/danny/Music/MyProject/Samples/Processed');
-});
+import { nextOutputPath, sanitizeOutputName, uniqueNamedPath } from '../src/projectPaths.ts';
 
 test('nextOutputPath returns _edited_001 when no files exist', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'ae-test-'));
@@ -65,14 +59,24 @@ test('uniqueNamedPath appends _2 when the name is taken', async () => {
   }
 });
 
-test('ensureDir creates nested directories that do not exist', async () => {
-  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'ae-test-'));
-  const nested = path.join(base, 'a', 'b', 'c');
-  try {
-    await ensureDir(nested);
-    const stat = await fs.stat(nested);
-    assert.ok(stat.isDirectory(), 'nested path should be a directory');
-  } finally {
-    await fs.rm(base, { recursive: true });
-  }
+
+test('sanitizeOutputName keeps names that are fine on macOS and Windows', () => {
+  assert.equal(sanitizeOutputName('Kick 01 (tight)'), 'Kick 01 (tight)');
+});
+
+test('sanitizeOutputName replaces characters macOS or Windows forbid', () => {
+  assert.equal(sanitizeOutputName('a/b\\c:d*e?f"g<h>i|j'), 'a_b_c_d_e_f_g_h_i_j');
+});
+
+test('sanitizeOutputName drops trailing dots and spaces Windows would strip', () => {
+  assert.equal(sanitizeOutputName('loop. . '), 'loop');
+});
+
+test('sanitizeOutputName suffixes Windows reserved device names', () => {
+  for (const n of ['CON', 'nul', 'Com1', 'LPT9']) assert.equal(sanitizeOutputName(n), `${n}_`);
+  assert.equal(sanitizeOutputName('console'), 'console');
+});
+
+test('sanitizeOutputName caps very long names', () => {
+  assert.equal(sanitizeOutputName('x'.repeat(300)).length, 120);
 });
